@@ -13,6 +13,8 @@ jobs:
   build:
     name: Build and upload artifacts
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,3 +30,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           path: built/*.zip
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: built/*.zip
+          generate_release_notes: true
