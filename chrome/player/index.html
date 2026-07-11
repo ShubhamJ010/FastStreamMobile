@@ -9,6 +9,7 @@
     <link rel="shortcut icon" type="image/png" href="../icon128.png" />
     <link rel="stylesheet" href="./assets/fluidplayer/css/colors.css">
     <link rel="stylesheet" href="./assets/fluidplayer/css/fluidplayer.css">
+    <link rel="stylesheet" href="./assets/fluidplayer/css/mobile.css">
     <link rel="stylesheet" href="./assets/sweetalert/css/sweetalert.css">
     <link rel="stylesheet" href="./assets/coloris/css/coloris.css">
 </head>
@@ -20,6 +21,7 @@
         tabindex="-1">
         <div class="video-container"></div>
         <div class="fluid_subtitles_container"></div>
+        <div class="fluid_mobile_top_tools"></div>
         <div class="fluid_controls_container fade_in">
             <div class="skip_button" style="display: none;" tabindex="0" role="button"></div>
             <div class="next_video_button" style="display: none;" tabindex="0" role="button"></div>
@@ -257,9 +259,11 @@
         </div>
         <div class="fluid_html_on_pause">
             <div role="button" data-i18n-label="player_play_label"
-                class="fluid_control_playpause_big_circle fluid_initial_play"
-                style="background-color: rgb(51, 51, 51);">
-                <div class="fluid_control_playpause_big fluid_initial_play_button"></div>
+                class="fluid_control_playpause_big_circle fluid_initial_play">
+                <div class="fluid_control_playpause_big">
+                    <svg class="play"><use href="assets/fluidplayer/static/icons.svg#play"></use></svg>
+                    <svg class="pause"><use href="assets/fluidplayer/static/icons.svg#pause"></use></svg>
+                </div>
             </div>
             <div class="playinfo">
                 <h3 data-i18n="player_nosource_header"></h3>

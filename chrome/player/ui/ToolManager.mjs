@@ -175,16 +175,27 @@ export class ToolManager {
     const leftToolPairs = [];
     const rightToolPairs = [];
     const extraToolPairs = [];
+    const mobileTopToolPairs = [];
+
+    const isMobile = EnvUtils.isMobile();
 
     for (const [tool, element] of Object.entries(toolElements)) {
       element.dataset.tool = tool;
-      const location = toolSettings[tool].location;
+      let location = toolSettings[tool].location;
+
+      if (isMobile && (tool === 'forward' || tool === 'backward')) {
+        location = 'mobile-top';
+        element.classList.remove('hidden');
+      }
+
       if (location === 'left') {
         leftToolPairs.push([element, toolSettings[tool]]);
       } else if (location === 'right') {
         rightToolPairs.push([element, toolSettings[tool]]);
       } else if (location === 'extra') {
         extraToolPairs.push([element, toolSettings[tool]]);
+      } else if (location === 'mobile-top') {
+        mobileTopToolPairs.push([element, toolSettings[tool]]);
       } else { // Legacy
         if (toolSettings[tool].enabled) {
           rightToolPairs.push([element, toolSettings[tool]]);
@@ -208,6 +219,11 @@ export class ToolManager {
     extraToolPairs.sort((a, b) => a[1].priority - b[1].priority);
     for (const [element] of extraToolPairs) {
       DOMElements.extraTools.appendChild(element);
+    }
+
+    mobileTopToolPairs.sort((a, b) => a[1].priority - b[1].priority);
+    for (const [element] of mobileTopToolPairs) {
+      DOMElements.mobileTopTools.appendChild(element);
     }
 
     this.checkMoreTool();

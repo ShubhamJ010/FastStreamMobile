@@ -98,6 +98,19 @@ export class InterfaceController {
     this.loopControls.setupUI();
 
     this.saveManager = new SaveManager(this.client);
+
+    if (EnvUtils.isMobile()) {
+      DOMElements.playerContainer.classList.add('fluid_player_mobile');
+      DOMElements.playPauseButtonBigCircle.classList.add('fluid_mobile_center_play');
+      DOMElements.playPauseButtonBigCircle.style.display = ''; // Ensure it's visible on mobile
+
+      // Swap big center play/pause icons to use mobileIcons.svg
+      const playUse = DOMElements.playPauseButtonBigCircle.querySelector('.play use');
+      const pauseUse = DOMElements.playPauseButtonBigCircle.querySelector('.pause use');
+      if (playUse) playUse.setAttribute('href', 'assets/fluidplayer/static/mobileIcons.svg#play');
+      if (pauseUse) pauseUse.setAttribute('href', 'assets/fluidplayer/static/mobileIcons.svg#pause');
+    }
+
     this.saveManager.setupUI();
 
     this.playbackRateChanger.on('open', this.closeAllMenus.bind(this));
@@ -437,7 +450,7 @@ export class InterfaceController {
         return;
       }
 
-      if (this.isBigPlayButtonVisible()) {
+      if (!EnvUtils.isMobile() && this.isBigPlayButtonVisible()) {
         this.playPauseToggle();
         return;
       }
@@ -546,6 +559,12 @@ export class InterfaceController {
       this.client.setSeekSave(false);
       this.client.currentTime += this.client.options.seekStepSize * 5;
       this.client.setSeekSave(true);
+
+      DOMElements.skipForwardButton.classList.add('fluid_animate_rotate_forward');
+      DOMElements.skipForwardButton.addEventListener('animationend', () => {
+        DOMElements.skipForwardButton.classList.remove('fluid_animate_rotate_forward');
+      }, {once: true});
+
       e.stopPropagation();
     });
 
@@ -555,6 +574,12 @@ export class InterfaceController {
       this.client.setSeekSave(false);
       this.client.currentTime += -this.client.options.seekStepSize * 5;
       this.client.setSeekSave(true);
+
+      DOMElements.skipBackwardButton.classList.add('fluid_animate_rotate_backward');
+      DOMElements.skipBackwardButton.addEventListener('animationend', () => {
+        DOMElements.skipBackwardButton.classList.remove('fluid_animate_rotate_backward');
+      }, {once: true});
+
       e.stopPropagation();
     });
 
@@ -998,6 +1023,7 @@ export class InterfaceController {
   }
 
   hideBigPlayButton() {
+    if (EnvUtils.isMobile()) return;
     DOMElements.playPauseButtonBigCircle.style.display = 'none';
   }
 
@@ -1164,14 +1190,15 @@ export class InterfaceController {
 
   updatePlayPauseButton() {
     const playButton = DOMElements.playPauseButton;
-    const playButtonBig = DOMElements.playPauseButtonBig;
+    const playButtonBigCircle = DOMElements.playPauseButtonBigCircle;
+
     if (this.state.playing) {
       playButton.classList.add('playing');
-      playButtonBig.classList.replace('fluid_initial_play_button', 'fluid_initial_pause_button');
+      playButtonBigCircle.classList.add('playing');
       WebUtils.setLabels(playButton, Localize.getMessage('player_pause_label'));
     } else {
       playButton.classList.remove('playing');
-      playButtonBig.classList.replace('fluid_initial_pause_button', 'fluid_initial_play_button');
+      playButtonBigCircle.classList.remove('playing');
       WebUtils.setLabels(playButton, Localize.getMessage('player_play_label'));
     }
   }

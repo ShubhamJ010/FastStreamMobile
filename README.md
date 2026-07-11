@@ -1,6 +1,8 @@
 [![logotext1](https://github.com/user-attachments/assets/cefd20ba-606a-482c-a522-36b3419e93c7)](https://faststream.online)
 
-# FastStream
+# FastStream MOBILE
+
+> A mobile-focused fork of [FastStream](https://github.com/Andrews54757/FastStream), bringing the player to Fennec (Firefox for Android) and other mobile browsers.
 
 Tired of having videos buffer with slow internet speeds? Frustrated by a website's lack of accessibility features? This extension will replace videos on websites with a video player designed for your convenience. Say goodbye to buffering and hello to a more accessible video experience!
 
@@ -24,7 +26,7 @@ To use the player, simply:
 Notes:
 - Livestreams are not supported. They will not be supported in the near future.
 - This player will not function with DRM protected content. This is intended. Please be mindful of how you use this tool. FastStream should not be used to infringe copyright.
-- This player is still a work-in-progress. Please report any bugs to the Github issue tracker here: https://github.com/Andrews54757/FastStream/issues
+- This player is still a work-in-progress. Please report any bugs to the Github issue tracker here: https://github.com/ShubhamJ010/FastStreamMobile/issues
 - For your privacy, this extension **does not collect telemetry**. Nor does it require additional resources from the internet to function. It will work fully offline. Feel free to browse the codebase on Github.
 - **We take accessibility concerns seriously**. If you need accommodations not available in the latest version, please contact us and we will work on it ASAP. Also, please feel free to submit feature requests or suggestions on the Github issue tracker!
 - The default maximum size for pre-buffering is 5GB. This can be changed in the settings page. Please be mindful of your computer's storage space when changing this setting. Browsers will offload data in the RAM to the SSD if the video is too large. Frequently pre-buffering large videos can reduce the lifespan of your SSD.
@@ -68,12 +70,12 @@ The Chrome extension store policies do not allow extensions that can download vi
 
 1. Go to `chrome://extensions`
 2. Turn on developer mode
-3. Drag and drop the `chrome` directory of this repository, or the prebuilt ZIP found on the [Releases page](https://github.com/Andrews54757/FastStream/releases)
+3. Drag and drop the `chrome` directory of this repository, or the prebuilt ZIP found on the [Releases page](https://github.com/ShubhamJ010/FastStreamMobile/releases)
 
 **THERE IS NO BUILT-IN AUTOMATIC UPDATE SYSTEM. If you go this route, please make sure to check back often for updates because I will often fix bugs as I encounter them. FastStream will remind you in the settings page, but you will have to update it manually.**
 
 ## Manual Installation For Firefox
-The extension is, by default, configured to work on Chrome. You can either use a prebuilt version from the [Releases page](https://github.com/Andrews54757/FastStream/releases) or build the extension yourself using the build instructions below.
+The extension is, by default, configured to work on Chrome. You can either use a prebuilt version from the [Releases page](https://github.com/ShubhamJ010/FastStreamMobile/releases) or build the extension yourself using the build instructions below.
 
 You can then install the extension on Firefox Developer Edition by going to `about:config` and setting `xpinstall.signatures.required` to `false`. You must then also disable extension auto-updates or the extension will be removed when you close the browser. To do this, go to `about:addons`, click on the gear icon, and uncheck `Update Add-ons Automatically`. You can then click "Install Add-on From File" and select the `firefox-libre-*.zip` file to install the extension.
 
@@ -121,11 +123,11 @@ Many thanks to the contributors of this project.
 
 ## Funding & Donation Policy
 
-FastStream does not accept donations for the project as a whole. Please see the [wiki](https://github.com/Andrews54757/FastStream/wiki/Funding) for more details.
+FastStream does not accept donations for the project as a whole. Please see the [wiki](https://github.com/ShubhamJ010/FastStreamMobile/wiki/Funding) for more details.
 
 ## Technical Details
 
-Please see the [wiki](https://github.com/Andrews54757/FastStream/wiki/Technical-Details) for more information on the technical details!
+Please see the [wiki](https://github.com/ShubhamJ010/FastStreamMobile/wiki/Technical-Details) for more information on the technical details!
   
 ## Disclaimer
 

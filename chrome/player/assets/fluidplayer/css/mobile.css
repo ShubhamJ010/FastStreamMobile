@@ -1,0 +1,107 @@
+/* Mobile CSS for FastStreamMobile */
+
+.fluid_mobile_top_tools {
+    position: absolute;
+    top: 5%;
+    right: 5%;
+    display: flex;
+    gap: 15px;
+    z-index: 1000; /* Ensure it is above video and controls */
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+/* Visibility logic for mobile top tools */
+.mainplayer.controls_visible .fluid_mobile_top_tools {
+    opacity: 1;
+}
+
+.fluid_mobile_top_tools .fluid_button {
+    pointer-events: auto;
+    width: 15vmin;
+    height: 12vmin;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 3vmin;
+    padding: 1.5vmin;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Mobile Center Play/Pause Button */
+.fluid_mobile_center_play {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 20vmin;
+    height: 20vmin;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 5vmin; /* Squircle */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1001;
+    cursor: pointer;
+    transition: opacity 0.3s, transform 0.3s;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Visibility logic for mobile center button */
+.mainplayer.controls_visible .fluid_mobile_center_play,
+.mainplayer:not(.controls_visible) .fluid_mobile_center_play:not(.playing) {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.fluid_mobile_center_play .fluid_control_playpause_big {
+    width: 50%;
+    height: 50%;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.fluid_mobile_center_play svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    color: white;
+    fill: white;
+    transition: opacity 0.3s, transform 0.3s;
+}
+
+.fluid_mobile_center_play .pause {
+    opacity: 0;
+    transform: scale(0.5) rotate(-45deg);
+}
+
+.fluid_mobile_center_play.playing .play {
+    opacity: 0;
+    transform: scale(0.5) rotate(45deg);
+}
+
+.fluid_mobile_center_play.playing .pause {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+}
+
+.fluid_mobile_center_play:not(.playing) .play {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+}
+
+/* Hide original desktop play button on mobile */
+.fluid_player_mobile .fluid_control_playpause {
+    display: none !important;
+}
