@@ -37,6 +37,6 @@
 - **Clean Build & Update Procedure for Firefox:**
     If you need to rebuild and update the Firefox XPI in `Downloads`:
     ```bash
-    rm -rf built/ && npm run build && rm -f /Users/sj/Downloads/faststream-mobile.xpi && cp built/firefox-libre-faststream_video_player-1.3.76.zip /Users/sj/Downloads/faststream-mobile.xpi
+    rm -rf built/ && npm run build && rm -f /Users/sj/Downloads/faststream-mobile.xpi && cp built/firefox-libre-faststream_video_player-0.0.1.zip /Users/sj/Downloads/faststream-mobile.xpi
     ```
 

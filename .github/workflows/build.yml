@@ -36,3 +36,4 @@ jobs:
         with:
           files: built/*.zip
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
