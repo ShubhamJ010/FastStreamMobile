@@ -90,6 +90,8 @@ export const DOMElements = {
   skipForwardButton: document.querySelector('.mainplayer .fluid_control_skip_forward'),
   skipBackwardButton: document.querySelector('.mainplayer .fluid_control_skip_backward'),
   mobileTopTools: document.querySelector('.mainplayer .fluid_mobile_top_tools'),
+  mobileBottomTools: document.querySelector('.mainplayer .fluid_mobile_bottom_tools'),
+  mobileBarEnd: document.querySelector('.mainplayer .fluid_mobile_bar_end'),
 
   mobileControlBar: document.querySelector('.mainplayer .fluid_mobile_control_bar'),
   mobileTimeElapsed: document.querySelector('.mainplayer .fluid_mobile_time_elapsed'),

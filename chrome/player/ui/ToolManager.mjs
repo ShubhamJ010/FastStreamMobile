@@ -4,6 +4,16 @@ import {EnvUtils} from '../utils/EnvUtils.mjs';
 import {Utils} from '../utils/Utils.mjs';
 import {DOMElements} from './DOMElements.mjs';
 
+// The desktop toolbar is hidden on mobile, so the essential tools move onto the
+// floating layers instead. Each array is both the membership test and the display
+// order of its layer:
+//   top bar      — landscape only; portrait drops it to keep the frame clear
+//   bottom bar   — play/pause flanked by the skip buttons, at the left of the bar
+//   bar end      — fullscreen, docked to the right of the seek track
+const MOBILE_TOP_TOOLS = ['sources', 'subtitles', 'quality', 'settings'];
+const MOBILE_BOTTOM_TOOLS = ['backward', 'playpause', 'forward'];
+const MOBILE_BAR_END_TOOLS = ['fullscreen'];
+
 export class ToolManager {
   constructor(client, interfaceController) {
     this.interfaceController = interfaceController;
@@ -176,6 +186,8 @@ export class ToolManager {
     const rightToolPairs = [];
     const extraToolPairs = [];
     const mobileTopToolPairs = [];
+    const mobileBottomToolPairs = [];
+    const mobileBarEndToolPairs = [];
 
     const isMobile = EnvUtils.isMobile();
 
@@ -183,9 +195,14 @@ export class ToolManager {
       element.dataset.tool = tool;
       let location = toolSettings[tool].location;
 
-      if (isMobile && (tool === 'forward' || tool === 'backward')) {
-        location = 'mobile-top';
+      if (isMobile && MOBILE_BOTTOM_TOOLS.includes(tool)) {
+        location = 'mobile-bottom';
         element.classList.remove('hidden');
+      } else if (isMobile && MOBILE_BAR_END_TOOLS.includes(tool)) {
+        location = 'mobile-bar-end';
+        element.classList.remove('hidden');
+      } else if (isMobile && MOBILE_TOP_TOOLS.includes(tool)) {
+        location = 'mobile-top';
       }
 
       if (location === 'left') {
@@ -196,6 +213,10 @@ export class ToolManager {
         extraToolPairs.push([element, toolSettings[tool]]);
       } else if (location === 'mobile-top') {
         mobileTopToolPairs.push([element, toolSettings[tool]]);
+      } else if (location === 'mobile-bottom') {
+        mobileBottomToolPairs.push([element, toolSettings[tool]]);
+      } else if (location === 'mobile-bar-end') {
+        mobileBarEndToolPairs.push([element, toolSettings[tool]]);
       } else { // Legacy
         if (toolSettings[tool].enabled) {
           rightToolPairs.push([element, toolSettings[tool]]);
@@ -221,9 +242,35 @@ export class ToolManager {
       DOMElements.extraTools.appendChild(element);
     }
 
-    mobileTopToolPairs.sort((a, b) => a[1].priority - b[1].priority);
-    for (const [element] of mobileTopToolPairs) {
-      DOMElements.mobileTopTools.appendChild(element);
+    if (isMobile) {
+      // The fixed layer order wins over the saved desktop priorities.
+      const byLayerOrder = (order) => (a, b) => {
+        const indexA = order.indexOf(a[0].dataset.tool);
+        const indexB = order.indexOf(b[0].dataset.tool);
+        return (indexA === -1 ? order.length : indexA) - (indexB === -1 ? order.length : indexB);
+      };
+      mobileTopToolPairs.sort(byLayerOrder(MOBILE_TOP_TOOLS));
+      mobileBottomToolPairs.sort(byLayerOrder(MOBILE_BOTTOM_TOOLS));
+      mobileBarEndToolPairs.sort(byLayerOrder(MOBILE_BAR_END_TOOLS));
+    } else {
+      mobileTopToolPairs.sort((a, b) => a[1].priority - b[1].priority);
+      mobileBottomToolPairs.sort((a, b) => a[1].priority - b[1].priority);
+      mobileBarEndToolPairs.sort((a, b) => a[1].priority - b[1].priority);
+    }
+    if (DOMElements.mobileTopTools) {
+      for (const [element] of mobileTopToolPairs) {
+        DOMElements.mobileTopTools.appendChild(element);
+      }
+    }
+    if (DOMElements.mobileBottomTools) {
+      for (const [element] of mobileBottomToolPairs) {
+        DOMElements.mobileBottomTools.appendChild(element);
+      }
+    }
+    if (DOMElements.mobileBarEnd) {
+      for (const [element] of mobileBarEndToolPairs) {
+        DOMElements.mobileBarEnd.appendChild(element);
+      }
     }
 
     this.checkMoreTool();

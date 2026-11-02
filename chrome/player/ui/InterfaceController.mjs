@@ -98,22 +98,19 @@ export class InterfaceController {
     this.loopControls.setupUI();
 
     this.saveManager = new SaveManager(this.client);
-
     if (EnvUtils.isMobile()) {
       DOMElements.playerContainer.classList.add('fluid_player_mobile');
+      DOMElements.playerContainer.classList.add('fluid_player');
       DOMElements.playPauseButtonBigCircle.classList.add('fluid_mobile_center_play');
-      DOMElements.playPauseButtonBigCircle.style.display = ''; // Ensure it's visible on mobile
-      DOMElements.mobileControlBar.style.display = ''; // Reveal the minimal floating control bar
-      if (DOMElements.mobile2xBanner) DOMElements.mobile2xBanner.style.display = ''; // Reveal the 2x feedback banner
+      DOMElements.playPauseButtonBigCircle.style.display = 'none';
 
-      // Swap big center play/pause icons to use mobileIcons.svg
-      const playUse = DOMElements.playPauseButtonBigCircle.querySelector('.play use');
-      const pauseUse = DOMElements.playPauseButtonBigCircle.querySelector('.pause use');
-      if (playUse) playUse.setAttribute('href', 'assets/fluidplayer/static/mobileIcons.svg#play');
-      if (pauseUse) pauseUse.setAttribute('href', 'assets/fluidplayer/static/mobileIcons.svg#pause');
+      // Reveal the new minimal floating control bar for mobile (portrait/landscape layout).
+      DOMElements.mobileControlBar.style.display = '';
+      if (DOMElements.mobile2xBanner) DOMElements.mobile2xBanner.style.display = '';
 
       this.setupMobileControlBar();
       this.setupMobileGestures();
+      this.setupMobileOrientation();
     }
 
     this.saveManager.setupUI();
@@ -232,6 +229,59 @@ export class InterfaceController {
     this.updateToolVisibility();
     this.fineTimeControls.reset();
     this.playbackRateChanger.reset();
+  }
+
+  setupMobileOrientation() {
+    this.updateMobileOrientation();
+    window.addEventListener('orientationchange', () => this.updateMobileOrientation());
+    window.addEventListener('resize', () => this.updateMobileOrientation());
+    if (window.screen?.orientation) {
+      window.screen.orientation.addEventListener('change', () => this.updateMobileOrientation());
+    }
+    document.addEventListener('fullscreenchange', () => this.updateMobileOrientation());
+  }
+
+  updateMobileOrientation() {
+    if (!EnvUtils.isMobile()) return;
+
+    let isLandscape = false;
+
+    // Check device screen orientation
+    const orientationType = window.screen?.orientation?.type;
+    if (orientationType) {
+      isLandscape = orientationType.startsWith('landscape');
+    } else if (typeof window.orientation === 'number') {
+      isLandscape = Math.abs(window.orientation) === 90;
+    } else if (window.screen && typeof window.screen.width === 'number' && typeof window.screen.height === 'number') {
+      // In mobile environment, screen.width > screen.height means phone is rotated to landscape
+      isLandscape = window.screen.width > window.screen.height;
+    }
+
+    // Try checking top window dimensions if accessible
+    try {
+      if (window.top && window.top !== window) {
+        if (window.top.innerWidth > window.top.innerHeight) {
+          isLandscape = true;
+        } else {
+          isLandscape = false;
+        }
+      }
+    } catch (e) {
+      // Cross-origin iframe
+    }
+
+    // Fullscreen overrides: when fullscreen, orientation matches window aspect ratio
+    if (this.state?.fullscreen || document.fullscreenElement) {
+      isLandscape = window.innerWidth > window.innerHeight;
+    }
+
+    if (isLandscape) {
+      DOMElements.playerContainer.classList.remove('isPortrait');
+      DOMElements.playerContainer.classList.add('isLandscape');
+    } else {
+      DOMElements.playerContainer.classList.remove('isLandscape');
+      DOMElements.playerContainer.classList.add('isPortrait');
+    }
   }
 
   /**
@@ -1196,9 +1246,47 @@ export class InterfaceController {
     this.queueControlsHide();
   }
 
+  /**
+   * Whether a menu or popwindow is currently open. On mobile the controls
+   * auto-hide while playing, which would otherwise take an open menu away from
+   * the user after a few seconds (menus live inside the mobile top bar).
+   * @return {boolean} True if a menu or popwindow is open.
+   */
+  hasOpenOverlay() {
+    const windows = [
+      DOMElements.linkuiContainer,
+      DOMElements.subuiContainer,
+      DOMElements.optionsContainer,
+      DOMElements.audioConfigContainer,
+    ];
+    if (windows.some((el) => el && el.style.display !== 'none')) {
+      return true;
+    }
+
+    const menus = [
+      DOMElements.playbackRateMenuContainer,
+      DOMElements.videoSourceList,
+      DOMElements.audioSourceList,
+      DOMElements.languageMenu,
+      DOMElements.subtitlesMenu,
+      DOMElements.loopMenu,
+    ];
+    if (menus.some((el) => el && el.style.display !== 'none')) {
+      return true;
+    }
+
+    return DOMElements.extraTools.classList.contains('visible');
+  }
+
   queueControlsHide(time) {
     clearTimeout(this.hideControlBarTimeout);
     this.hideControlBarTimeout = setTimeout(() => {
+      // Keep the controls up while a menu or window is open on mobile.
+      if (EnvUtils.isMobile() && this.hasOpenOverlay()) {
+        this.queueControlsHide(1000);
+        return;
+      }
+
       // On mobile the big play button is always shown (it doubles as the center
       // button), so it must not block auto-hide.
       const bigPlayBlocking = EnvUtils.isMobile() ? false : this.isBigPlayButtonVisible();
@@ -1223,6 +1311,10 @@ export class InterfaceController {
   }
 
   isBigPlayButtonVisible() {
+    if (EnvUtils.isMobile()) {
+      // Mobile chrome uses centered bottom transport, not the big centre squircle.
+      return false;
+    }
     return DOMElements.playPauseButtonBigCircle.style.display !== 'none';
   }
 
@@ -1372,6 +1464,9 @@ export class InterfaceController {
         this.state.fullscreen = false;
         this.fullscreenToggle(false);
       }
+    }
+    if (EnvUtils.isMobile()) {
+      this.updateMobileOrientation();
     }
   }
 

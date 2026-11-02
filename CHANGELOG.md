@@ -7,6 +7,37 @@ and this fork maintains mobile-only scope (see `AGENTS.md`).
 
 ## [Unreleased]
 
+### Changed
+- **Flat "iOS material" mobile chrome** (`chrome/player/assets/fluidplayer/css/mobile.css`
+  rebuilt on a small set of glass tokens). Every overlay is now one solid translucent
+  colour behind a heavy backdrop blur, with a hairline border and a neutral drop shadow:
+  **no gradients, no coloured glows, no bevels anywhere in the file.**
+  - The bars stay hidden while the video plays and fade in on tap, so the picture is
+    unobstructed. Safe-area insets keep them clear of notches and gesture bars.
+  - Subtitles are lifted above the bottom bar; the skip/auto-next/VPN prompts became
+    matching glass pills; popwindows (sources, subtitles search, settings, audio config)
+    are now glass bottom sheets with a grab handle and a proper close target.
+  - Menus opened from the top bar drop downward inside the viewport instead of opening
+    off the top edge, and are anchored to the bar so they never leave the screen.
+- **The bottom bar is two rows** (`chrome/player/index.html`): a centred transport row
+  — play/pause (46 px) flanked by the ±10 s skips (40 px) — sitting over a progress row
+  that holds nothing but elapsed time, the seek track, remaining time and fullscreen.
+  The seek track keeps its 40 px touch target with a 3 px flat accent fill and a
+  played-position dot.
+- **Orientation-adaptive controls** — in portrait the bar is the whole UI (the top bar is
+  hidden entirely, transport centered, progress row at bottom); in landscape the top bar
+  hosts top tools (sources, subtitles, quality, settings) on the top-left and transport
+  (seek buttons & pause) on the top-right, while the progress bar row spans the bottom.
+  The standalone center play button is removed in favor of the integrated transport pill.
+- **Essential tools routed into three mobile layers** (`chrome/player/ui/ToolManager.mjs`):
+  the desktop toolbar is hidden on mobile, so tools are placed by fixed layer order —
+  `mobile-top` (sources, subtitles, quality, settings), `mobile-bottom` (play/pause,
+  skip back, skip forward) and `mobile-bar-end` (fullscreen). Tools without a
+  player/quality stay hidden; desktop tool placement is untouched.
+- Mobile status messages and the buffering spinner are now a **small widget anchored
+  above the progress bar, centred** (landscape: tucked under the top row, still centred),
+  capped in width, and remain visible while the controls are hidden.
+
 ### Added
 - **Floating mobile control bar** — a minimal, touch-friendly control bar that replaces
   the desktop bottom controls on mobile. It shows elapsed time (left), a combined
@@ -46,8 +77,8 @@ and this fork maintains mobile-only scope (see `AGENTS.md`).
   blocks auto-hide on mobile (it doubles as the center button).
 
 ### Changed
-- Seek bar retinted to a **YouTube-style** look on mobile: a solid white buffered/loaded
-  layer underneath and a solid red played layer on top, for clear visual distinction.
+- Seek bar retinted for the flat mobile look: a solid white buffered/loaded layer
+  underneath and a solid accent-blue played layer on top, with no gradient or glow.
 - Desktop mouse hold-to-2×-speed is now guarded by `!EnvUtils.isMobile()` so it no longer
   runs on mobile (mobile uses the pointer-based gesture instead).
 

@@ -1,218 +1,947 @@
-/* Mobile CSS for FastStreamMobile */
+/* ==============================================================================
+   FastStreamMobile — mobile player chrome
+   ----------------------------------------------------------------------------
+   Ultra-minimal, touch-first overlay in the flat iOS material style: one
+   solid translucent colour behind a heavy backdrop blur, a hairline border and
+   nothing else — no gradients, no glows, no bevels anywhere in this file.
 
-.fluid_mobile_top_tools {
-    position: absolute;
-    top: 5%;
-    right: 5%;
-    display: flex;
-    gap: 15px;
-    z-index: 1000; /* Ensure it is above video and controls */
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.3s ease;
+   What a phone gets:
+     top bar      sources · subtitles · quality · settings (landscape only)
+     bottom bar   play/pause · skip back · skip forward · elapsed · seek ·
+                  remaining · fullscreen, all on one anchored bar
+     centre       the big play button, only while the controls are hidden
+   Desktop chrome is untouched — every rule here is scoped to .fluid_player_mobile.
+   ============================================================================ */
+
+.fluid_player_mobile {
+    /* Flat glass: a single solid colour. Depth comes from the backdrop blur. */
+    --fs-glass: rgba(12, 20, 34, 0.55);
+    --fs-glass-strong: rgba(12, 20, 34, 0.80);
+    --fs-glass-border: rgba(255, 255, 255, 0.14);
+    --fs-glass-highlight: rgba(255, 255, 255, 0.10);
+
+    /* Blue accent, used flat */
+    --fs-accent: #4cc6ff;
+    --fs-accent-deep: #2f7dff;
+
+    /* Text */
+    --fs-text: #f2f7ff;
+    --fs-text-dim: rgba(226, 238, 255, 0.62);
+
+    /* Surfaces */
+    --fs-blur: blur(24px) saturate(180%);
+    --fs-shadow: 0 8px 26px rgba(0, 0, 0, 0.38);
+    --fs-inset: inset 0 1px 0 var(--fs-glass-highlight);
+
+    --fs-space-top: calc(env(safe-area-inset-top, 0px) + 10px);
+    --fs-space-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+    --fs-space-left: calc(env(safe-area-inset-left, 0px) + 12px);
+    --fs-space-right: calc(env(safe-area-inset-right, 0px) + 12px);
 }
 
-/* Visibility logic for mobile top tools */
-.mainplayer.controls_visible .fluid_mobile_top_tools {
-    opacity: 1;
+.fluid_player_mobile .fluid_controls_container {
+    background: transparent !important;
+    pointer-events: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    height: auto !important;
+}
+
+/* Hide the desktop-only controls: the right-side cluster, the left tools row,
+   the extra (more) tools row, the hide button, the desktop progress bar and
+   its timeline-syncer pill. Everything that belongs on mobile is re-homed
+   into the floating bar below. */
+.fluid_player_mobile .fluid_controls_right,
+.fluid_player_mobile .tools_container_left,
+.fluid_player_mobile .fluid_controls_extra_tools,
+.fluid_player_mobile .hide_button,
+.fluid_player_mobile .fluid_controls_progress_container,
+.fluid_player_mobile .fluid_controls_timeline_syncer {
+    display: none !important;
+}
+
+/* Status messages + buffering spinner: a small widget anchored directly above
+   the progress bar and centred, never floating over the middle of the picture.
+   Landscape moves it under the top row — still centred. */
+.fluid_player_mobile .fluid_controls_bottom_container {
+    top: auto;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 66px);
+    left: 0;
+    right: 0;
+    width: auto;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    white-space: normal;
+    pointer-events: none;
+}
+
+.fluid_player_mobile .fluid_controls_left {
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.fluid_player_mobile .status_message,
+.fluid_player_mobile .reset_failed,
+.fluid_player_mobile .buffering_spinner {
+    height: auto;
+    min-width: 0;
+    max-width: min(74vw, 340px);
+    margin: 0;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--fs-text);
+    background: var(--fs-glass);
+    border: 1px solid var(--fs-glass-border);
+    box-shadow: var(--fs-shadow), var(--fs-inset);
+    backdrop-filter: var(--fs-blur);
+    -webkit-backdrop-filter: var(--fs-blur);
+}
+
+/* ============================================================================
+   Connection-speed widget
+   ----------------------------------------------------------------------------
+   A small pill showing connection count + load speed + percent done, anchored
+   directly above the progress bar and centred. Off by default; the download
+   status manager drives .show from the 'download' status level.
+   Landscape moves it under the top row — still centred there.
+   ============================================================================ */
+
+.fluid_player_mobile .fluid_controls_bottom_container .fluid_download_status {
+    display: none;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--fs-glass);
+    border: 1px solid var(--fs-glass-border);
+    box-shadow: var(--fs-shadow), var(--fs-inset);
+    backdrop-filter: var(--fs-blur);
+    -webkit-backdrop-filter: var(--fs-blur);
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--fs-text);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.fluid_player_mobile .fluid_controls_bottom_container .fluid_download_status.show {
+    display: flex;
+}
+
+.fluid_player_mobile .fluid_controls_bottom_container .fluid_download_status .connection_count {
+    color: var(--fs-text-dim);
+}
+
+.fluid_player_mobile .fluid_controls_bottom_container .fluid_download_status .speed_arrow {
+    color: var(--fs-accent);
+}
+
+.fluid_player_mobile .fluid_controls_bottom_container .fluid_download_status .speed_value {
+    color: var(--fs-accent);
+}
+
+.fluid_player_mobile .fluid_controls_bottom_container .fluid_download_status .percent_done {
+    color: var(--fs-text-dim);
+}
+
+.fluid_player_mobile .fluid_controls_bottom_container .fluid_download_status .icon {
+    width: 12px;
+    height: 12px;
+    flex: none;
+    color: var(--fs-accent);
+}
+
+/* Landscape: anchor under the top row, still centred. */
+.fluid_player_mobile.isLandscape .fluid_controls_bottom_container {
+    top: calc(env(safe-area-inset-top, 0px) + 66px);
+    bottom: auto;
+    align-items: flex-end;
+}
+
+.fluid_player_mobile.isLandscape .fluid_controls_bottom_container .fluid_download_status {
+    align-items: center;
+}
+
+/* ============================================================================
+   Button state colour — flat grey-blue, no gradients, no glows
+   ----------------------------------------------------------------------------
+   .fluid_button in the control bar gets a soft bluish tint on press, matching
+   the flat iOS-material approach the reference image uses for its buttons.
+   No gradients or bevels — just a solid translucent accent fill.
+   ============================================================================ */
+
+.fluid_mobile_control_bar .fluid_button {
+    transition: background 0.16s ease, transform 0.12s ease;
+}
+
+.fluid_mobile_control_bar .fluid_button:active {
+    background: rgba(76, 198, 255, 0.22);
+}
+
+.fluid_mobile_control_bar .fluid_control_playpause {
+    transition: background 0.16s ease, transform 0.12s ease;
+}
+
+.fluid_mobile_control_bar .fluid_control_playpause:active {
+    background: rgba(76, 198, 255, 0.30);
+}
+
+/* ============================================================================
+   2. Top bar — sources · subtitles · quality · settings
+   ----------------------------------------------------------------------------
+   A single frosted-glass pill pinned to the top edge, left-aligned, carrying
+   the four tools above plus a divider between the playback cluster (play/pause,
+   skip back, skip forward — opened from the bottom bar) and the page-level
+   tools. The divider is a hairline, not a separate surface.
+
+   When the bar has the four top tools AND a left group of tools, the bar
+   renders as `link | sub | quality | settings` on the far left and
+   `play | skip-back | skip-fwd` on the far right, with a divider between.
+   When it has only the playback cluster, it renders as `play | skip-back | skip-fwd`
+   centred, with no divider.
+
+   The bar uses `pointer-events: none` so taps on the glass between buttons fall
+   through to the video. Each button re-enables pointer events on itself. On a
+   narrow screen the bar is allowed to grow wider than the viewport and lamps
+   its left edge to the left; on a wide screen it is clamped to the viewport.
+   ============================================================================ */
+
+/* The owning buttons are made static so the panels are positioned against the
+   bar itself, and can never run off the left edge of a narrow screen. */
+.fluid_mobile_top_tools .fluid_button[data-tool="quality"],
+.fluid_mobile_top_tools .fluid_button[data-tool="subtitles"] {
+    position: static;
+}
+
+.fluid_mobile_top_tools .menu_container,
+.fluid_mobile_top_tools .rate_menu_container {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 4px;
+    bottom: auto;
+    left: auto;
+    transform: none;
+    width: max-content;
+    min-width: 190px;
+    max-width: min(80vw, 340px);
+    max-height: min(58vh, 420px);
+    padding: 6px;
+    border-radius: 16px;
+    border: 1px solid var(--fs-glass-border);
+    background: var(--fs-glass-strong);
+    color: var(--fs-text);
+    box-shadow: var(--fs-shadow), var(--fs-inset);
+    backdrop-filter: var(--fs-blur);
+    -webkit-backdrop-filter: var(--fs-blur);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+.fluid_mobile_top_tools .rate_menu_container .rate_menu {
+    position: relative;
+    inset: auto;
 }
 
 .fluid_mobile_top_tools .fluid_button {
-    pointer-events: auto;
-    width: 15vmin;
-    height: 12vmin;
-    background: rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border-radius: 3vmin;
-    padding: 1.5vmin;
-    box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 10px;
+    border-radius: 14px;
+    background: transparent;
+    border: none;
+    color: var(--fs-text);
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 
-/* Mobile Center Play/Pause Button */
+.fluid_mobile_top_tools .fluid_button svg {
+    width: 20px;
+    height: 20px;
+    opacity: 0.92;
+    color: var(--fs-text);
+    fill: currentColor;
+}
+
+.fluid_mobile_top_tools .fluid_button:active {
+    background: rgba(76, 198, 255, 0.22);
+}
+
+.fluid_mobile_top_tools .fluid_button.hidden,
+.fluid_mobile_top_tools > .hidden {
+    display: none !important;
+}
+
+/* Portrait keeps only what the bottom bar offers: play/pause, the two skips
+   and fullscreen. The top bar — sources, subtitles, quality, settings — is
+   landscape-only, so the tall frame stays clear of chrome. */
+.fluid_player_mobile:not(.isLandscape) .fluid_mobile_top_tools,
+.fluid_player_mobile.isPortrait .fluid_mobile_top_tools,
+.fluid_player.isPortrait .fluid_mobile_top_tools {
+    display: none !important;
+}
+
+/* ============================================================================
+   3. Centre play / pause — superseded
+   ----------------------------------------------------------------------------
+   Play/pause now lives in the transport cluster: dead centre of the frame in
+   portrait, top-left in landscape. The standalone squircle has no job left,
+   so it never renders — InterfaceController still drives its .playing class,
+   which is harmless.
+   ------------------------------------------------------------------------ */
 .fluid_mobile_center_play {
+    display: none !important;
+}
+
+  /* ---- layout invariants for interview feedback loop ---- */
+  /*
+   * Portrait (height <= width):
+   *   - bottom bar is the ONLY visible control chrome
+   *   - middle of frame: play/pause + skip back + skip forward
+   *   - bottom row: time + seek + remaining + fullscreen
+   *   - big centre play button killed
+   *
+   * Landscape (height > width):
+   *   - top tools top-left
+   *   - seek buttons & pause (transport) top-right
+   *   - progress row (time + seek + fullscreen) at bottom
+   */
+  .fluid_player.isPortrait .fluid_mobile_top_tools,
+  .fluid_player_mobile.isPortrait .fluid_mobile_top_tools,
+  .fluid_player_mobile:not(.isLandscape) .fluid_mobile_top_tools {
+    display: none !important;
+  }
+  .fluid_player.isPortrait .fluid_mobile_top_bar,
+  .fluid_player_mobile.isPortrait .fluid_mobile_top_bar,
+  .fluid_player_mobile:not(.isLandscape) .fluid_mobile_top_bar {
+    display: contents !important;
+  }
+  .fluid_player.isPortrait .fluid_controls_left,
+  .fluid_player.isPortrait .fluid_controls_right,
+  .fluid_player_mobile.isPortrait .fluid_controls_left,
+  .fluid_player_mobile.isPortrait .fluid_controls_right,
+  .fluid_player_mobile:not(.isLandscape) .fluid_controls_left,
+  .fluid_player_mobile:not(.isLandscape) .fluid_controls_right {
+    display: none !important;
+  }
+
+/* The no-source message is centred too, so it drops below the transport
+   pill instead of sitting underneath it. */
+.fluid_player_mobile .playinfo {
+    margin-top: 84px;
+}
+
+/* ============================================================================
+   4. Bottom bar — middle transport · bottom progress
+   ---------------------------------------------------------------------------- */
+
+/* A transparent full-bleed layer: it only gates visibility of the two groups
+   inside it and never takes a tap itself. */
+.fluid_mobile_control_bar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: block;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.24s ease, visibility 0.24s;
+    pointer-events: none;
+}
+
+.mainplayer.controls_visible .fluid_mobile_control_bar {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* --- The transport cluster ------------------------------------------------
+   Dead centre of the frame in portrait: play/pause flanked by the two skips.
+   Landscape moves it to the top-left corner (section 7). */
+.fluid_mobile_bottom_tools {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 20vmin;
-    height: 20vmin;
-    background: rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border-radius: 5vmin; /* Squircle */
     display: flex;
     align-items: center;
-    justify-content: center;
-    z-index: 1001;
-    cursor: pointer;
-    transition: opacity 0.3s, transform 0.3s;
-    opacity: 0;
-    pointer-events: none;
-}
-
-/* Visibility logic for mobile center button */
-.mainplayer.controls_visible .fluid_mobile_center_play,
-.mainplayer:not(.controls_visible) .fluid_mobile_center_play:not(.playing) {
-    opacity: 1;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 18px;
+    background: var(--fs-glass);
+    border: 1px solid var(--fs-glass-border);
+    box-shadow: var(--fs-shadow), var(--fs-inset);
+    backdrop-filter: var(--fs-blur);
+    -webkit-backdrop-filter: var(--fs-blur);
     pointer-events: auto;
 }
 
-.fluid_mobile_center_play .fluid_control_playpause_big {
-    width: 50%;
-    height: 50%;
+/* --- The progress row -----------------------------------------------------
+   Always pinned to the bottom edge: times, track, fullscreen. Nothing else.
+   Landscape lifts it to the top-right corner (section 7). */
+.fluid_mobile_bar_row {
+    position: absolute;
+    left: var(--fs-space-left);
+    right: var(--fs-space-right);
+    bottom: var(--fs-space-bottom);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 4px 6px 4px 12px;
+    border-radius: 18px;
+    background: var(--fs-glass);
+    border: 1px solid var(--fs-glass-border);
+    box-shadow: var(--fs-shadow), var(--fs-inset);
+    backdrop-filter: var(--fs-blur);
+    -webkit-backdrop-filter: var(--fs-blur);
+    pointer-events: auto;
+}
+
+.fluid_mobile_control_bar .fluid_button {
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex: none;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    background: transparent;
+    border-radius: 14px;
+    pointer-events: auto;
+    -webkit-tap-highlight-color: transparent;
 }
 
-.fluid_mobile_center_play svg {
-    position: absolute;
-    top: 0;
-    left: 0;
+.fluid_mobile_control_bar .fluid_button:active {
+    background: rgba(255, 255, 255, 0.14);
+    transform: scale(0.94);
+}
+
+.fluid_mobile_control_bar .fluid_button.hidden,
+.fluid_mobile_bottom_tools > .hidden,
+.fluid_mobile_bar_end > .hidden {
+    display: none !important;
+}
+
+.fluid_mobile_control_bar .fluid_button svg {
     width: 100%;
     height: 100%;
-    color: white;
-    fill: white;
-    transition: opacity 0.3s, transform 0.3s;
-}
-
-.fluid_mobile_center_play .pause {
-    opacity: 0;
-    transform: scale(0.5) rotate(-45deg);
-}
-
-.fluid_mobile_center_play.playing .play {
-    opacity: 0;
-    transform: scale(0.5) rotate(45deg);
-}
-
-.fluid_mobile_center_play.playing .pause {
     opacity: 1;
-    transform: scale(1) rotate(0deg);
+    color: var(--fs-text);
+    fill: currentColor;
 }
 
-.fluid_mobile_center_play:not(.playing) .play {
-    opacity: 1;
-    transform: scale(1) rotate(0deg);
+.fluid_mobile_bottom_tools .fluid_control_playpause {
+    width: 46px;
+    height: 46px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.12);
 }
 
-/* Hide original desktop play button on mobile */
-.fluid_player_mobile .fluid_control_playpause {
-    display: none !important;
+.fluid_mobile_bottom_tools .fluid_control_playpause svg {
+    width: 22px;
+    height: 22px;
 }
 
-/* Hide the desktop bottom controls + seek bar; replaced by the floating control bar */
-.fluid_player_mobile .fluid_controls_bottom_container,
-.fluid_player_mobile .fluid_controls_progress_container {
-    display: none !important;
+.fluid_mobile_bottom_tools .fluid_control_skip_forward,
+.fluid_mobile_bottom_tools .fluid_control_skip_backward {
+    width: 40px;
+    height: 40px;
 }
 
-/* Minimal floating mobile control bar:
-   time elapsed (left) · progress + seek (middle) · time remaining (right) */
-.fluid_mobile_control_bar {
-    position: absolute;
-    left: 5%;
-    right: 5%;
-    bottom: 6%;
-    display: flex;
-    align-items: center;
-    gap: 2.5vmin;
-    z-index: 1000; /* Above video and controls */
-    padding: 1.5vmin 3vmin;
-    background: rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border-radius: 4vmin; /* Squircle */
-    box-sizing: border-box;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s ease;
+.fluid_mobile_bottom_tools .fluid_control_skip_forward svg,
+.fluid_mobile_bottom_tools .fluid_control_skip_backward svg {
+    width: 18px;
+    height: 18px;
 }
 
-/* Visibility logic: follows the same controls_visible pattern as other mobile layers */
-.mainplayer.controls_visible .fluid_mobile_control_bar {
-    opacity: 1;
-    pointer-events: auto;
+.fluid_mobile_bar_end .fluid_control_fullscreen {
+    width: 40px;
+    height: 40px;
+}
+
+.fluid_mobile_bar_end .fluid_control_fullscreen svg {
+    width: 20px;
+    height: 20px;
 }
 
 .fluid_mobile_control_bar .fluid_mobile_time_elapsed,
 .fluid_mobile_control_bar .fluid_mobile_time_remaining {
-    color: white;
-    font-size: 3.2vmin;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
     user-select: none;
     -webkit-user-select: none;
 }
 
+.fluid_mobile_control_bar .fluid_mobile_time_elapsed {
+    color: var(--fs-text);
+}
+
+.fluid_mobile_control_bar .fluid_mobile_time_remaining {
+    color: var(--fs-text-dim);
+}
+
+/* The seek element is a tall touch target; the visible track is drawn with
+   pseudo-elements so it stays a hairline. */
 .fluid_mobile_seek {
     position: relative;
-    flex: 1;
-    height: 1.2vmin;
-    min-height: 8px;
-    background: rgba(255, 255, 255, 0.3);
-    border-radius: 1vmin;
+    flex: 1 1 auto;
+    height: 40px;
+    min-height: 40px;
+    background: none;
+    border-radius: 20px;
     cursor: pointer;
     touch-action: none;
 }
 
-/* Buffered / loaded portion: solid white (YouTube-style). Sits underneath the
-   played bar and marks how far the video has buffered. */
+.fluid_mobile_seek::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 3px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
 .fluid_mobile_seek_loaded {
     position: absolute;
-    top: 0;
     left: 0;
-    height: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 3px;
     width: 0%;
-    background: #ffffff;
-    border-radius: 1vmin;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.48);
     z-index: 1;
 }
 
-/* Played portion: solid red (YouTube-style). Drawn on top of the white buffered
-   layer so the red "played" position is clearly distinct from the buffered zone. */
 .fluid_mobile_seek_current {
     position: absolute;
-    top: 0;
     left: 0;
-    height: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 3px;
     width: 0%;
-    background: #ff0000;
-    border-radius: 1vmin;
+    min-width: 3px;
+    border-radius: 20px;
+    background: var(--fs-accent);
     z-index: 2;
-    /* Enlarge the hit/touch area without changing the visual height */
-    box-shadow: 0 0 0 1.5vmin transparent;
 }
 
-/* Mobile hold-to-2x feedback banner.
-   Sits in the top-center, just above the centered play/pause button, and
-   fades in while the user is holding the video background to play at 2x. */
+/* Played-position dot */
+.fluid_mobile_seek_current::after {
+    content: '';
+    position: absolute;
+    right: -5px;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    border-radius: 10px;
+    background: #eaf8ff;
+    transform: translateY(-50%) scale(0.9);
+    transition: transform 0.16s ease;
+}
+
+.fluid_mobile_seek:active .fluid_mobile_seek_current::after,
+.mainplayer.fluid_player_mobile .fluid_mobile_seek:active .fluid_mobile_seek_current::after {
+    transform: translateY(-50%) scale(1.25);
+}
+
+/* Skip-intro / auto-next / VPN prompts float just above the bar as matching
+   glass pills. */
+.fluid_player_mobile .skip_button,
+.fluid_player_mobile .next_video_button,
+.fluid_player_mobile .skip_button.shiftup,
+.fluid_player_mobile.expanded.controls_visible .skip_button,
+.fluid_player_mobile.expanded.controls_visible .next_video_button {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 66px);
+    right: var(--fs-space-right);
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--fs-glass-border);
+    background: var(--fs-glass-strong);
+    color: var(--fs-text);
+    font-size: 13px;
+    box-shadow: var(--fs-shadow), var(--fs-inset);
+    backdrop-filter: var(--fs-blur);
+    -webkit-backdrop-filter: var(--fs-blur);
+    z-index: 1000;
+    pointer-events: auto;
+    transition: none;
+}
+
+.fluid_player_mobile .vpn_button,
+.fluid_player_mobile.expanded.controls_visible .vpn_button {
+    top: auto;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 66px);
+    left: var(--fs-space-left);
+    right: var(--fs-space-right);
+    padding: 8px 16px;
+    border-radius: 16px;
+    border: 1px solid var(--fs-glass-border);
+    background: var(--fs-glass-strong);
+    color: var(--fs-text);
+    font-size: 13px;
+    text-align: center;
+    box-shadow: var(--fs-shadow), var(--fs-inset);
+    backdrop-filter: var(--fs-blur);
+    -webkit-backdrop-filter: var(--fs-blur);
+    z-index: 1000;
+    pointer-events: auto;
+}
+
+/* ============================================================================
+   5. Hold-to-2× feedback
+   ============================================================================ */
+
 .fluid_mobile_2x_banner {
     position: absolute;
-    top: 30%;
+    top: 32%;
     left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 1002; /* Above the center play button (1001) */
-    padding: 1.2vmin 5vmin;
-    background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border-radius: 4vmin;
-    color: #ffffff;
-    font-size: 7vmin;
+    transform: translate(-50%, -50%) scale(0.94);
+    z-index: 1002;
+    padding: 8px 20px;
+    border-radius: 999px;
+    background: var(--fs-glass-strong);
+    border: 1px solid var(--fs-glass-border);
+    box-shadow: var(--fs-shadow), var(--fs-inset);
+    backdrop-filter: var(--fs-blur);
+    -webkit-backdrop-filter: var(--fs-blur);
+    color: var(--fs-text);
+    font-size: 15px;
     font-weight: 700;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.14em;
     line-height: 1;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.18s ease;
+    transition: opacity 0.18s ease, transform 0.18s ease;
 }
 
 .fluid_mobile_2x_banner.show {
     opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+/* ============================================================================
+   6. Popup windows / submenu
+   ============================================================================ */
+
+.fluid_player_mobile .popwindow {
+    position: absolute;
+    inset: 0;
+    height: min(88%, 820px);
+    border-radius: 18px 18px 0 0;
+    border: 1px solid var(--fs-glass-border);
+    border-bottom: none;
+    background: var(--fs-glass-strong);
+    color: var(--fs-text);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), var(--fs-inset);
+    backdrop-filter: var(--fs-blur);
+    -webkit-backdrop-filter: var(--fs-blur);
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+}
+
+.fluid_player_mobile .popwindow .options_frame {
+    flex: 1;
+    min-height: 0;
+    border: none;
+    background: transparent;
+}
+
+/* ============================================================================
+   7. Landscape — tools top-left, transport top-right, progress bar at bottom
+   ---------------------------------------------------------------------------- */
+
+/* Top bar flex container across the top of the player in landscape:
+   hosts the top tools on the far left, and the transport (seek buttons & pause)
+   on the far right. */
+.fluid_player_mobile.isLandscape .fluid_mobile_top_bar {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 10px);
+    left: var(--fs-space-left);
+    right: var(--fs-space-right);
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    pointer-events: none;
+    z-index: 1000;
+}
+
+/* Top tools pill pinned to the top-left */
+.fluid_player_mobile.isLandscape .fluid_mobile_top_tools {
+    display: flex !important;
+    position: relative;
+    top: auto;
+    left: auto;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    border-radius: 18px;
+    background: var(--fs-glass);
+    border: 1px solid var(--fs-glass-border);
+    box-shadow: var(--fs-shadow), var(--fs-inset);
+    backdrop-filter: var(--fs-blur);
+    -webkit-backdrop-filter: var(--fs-blur);
+    pointer-events: auto;
+    flex: 0 0 auto;
+}
+
+.fluid_player_mobile.isLandscape .fluid_mobile_top_tools:empty {
+    display: none !important;
+}
+
+.fluid_player_mobile.isLandscape .fluid_mobile_top_tools .fluid_button {
+    width: 38px;
+    height: 38px;
+    padding: 9px;
+    border-radius: 12px;
+}
+
+.fluid_player_mobile.isLandscape .fluid_mobile_top_tools .fluid_button svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* Transport (seek-10 buttons & pause) pinned to the top-right corner */
+.fluid_player_mobile.isLandscape .fluid_mobile_bottom_tools {
+    position: relative;
+    top: auto;
+    left: auto;
+    transform: none;
+    display: flex !important;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    border-radius: 18px;
+    background: var(--fs-glass);
+    border: 1px solid var(--fs-glass-border);
+    box-shadow: var(--fs-shadow), var(--fs-inset);
+    backdrop-filter: var(--fs-blur);
+    -webkit-backdrop-filter: var(--fs-blur);
+    pointer-events: auto;
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
+.fluid_player_mobile.isLandscape .fluid_mobile_bottom_tools .fluid_control_playpause {
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.fluid_player_mobile.isLandscape .fluid_mobile_bottom_tools .fluid_control_playpause svg {
+    width: 20px;
+    height: 20px;
+}
+
+.fluid_player_mobile.isLandscape .fluid_mobile_bottom_tools .fluid_control_skip_forward,
+.fluid_player_mobile.isLandscape .fluid_mobile_bottom_tools .fluid_control_skip_backward {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+}
+
+.fluid_player_mobile.isLandscape .fluid_mobile_bottom_tools .fluid_control_skip_forward svg,
+.fluid_player_mobile.isLandscape .fluid_mobile_bottom_tools .fluid_control_skip_backward svg {
+    width: 17px;
+    height: 17px;
+}
+
+/* Progress bar anchored at the bottom edge across the full width */
+.fluid_player_mobile.isLandscape .fluid_mobile_bar_row {
+    position: absolute;
+    left: var(--fs-space-left);
+    right: var(--fs-space-right);
+    bottom: var(--fs-space-bottom);
+    top: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 4px 8px 4px 14px;
+    border-radius: 18px;
+    background: var(--fs-glass);
+    border: 1px solid var(--fs-glass-border);
+    box-shadow: var(--fs-shadow), var(--fs-inset);
+    backdrop-filter: var(--fs-blur);
+    -webkit-backdrop-filter: var(--fs-blur);
+    pointer-events: auto;
+}
+
+.fluid_player_mobile.isLandscape .fluid_mobile_bar_row .fluid_mobile_time_elapsed,
+.fluid_player_mobile.isLandscape .fluid_mobile_bar_row .fluid_mobile_time_remaining {
+    font-size: 12px;
+    padding: 0 4px;
+}
+
+.fluid_player_mobile.isLandscape .fluid_mobile_seek {
+    height: 38px;
+    min-height: 38px;
+    flex: 1 1 auto;
+}
+
+.fluid_player_mobile.isLandscape .fluid_mobile_bar_end .fluid_control_fullscreen {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+}
+
+.fluid_player_mobile.isLandscape .fluid_mobile_bar_end .fluid_control_fullscreen svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* Connection-speed widget anchors under top tools or transport in landscape */
+.fluid_player_mobile.isLandscape .fluid_controls_bottom_container {
+    top: calc(env(safe-area-inset-top, 0px) + 58px);
+    right: var(--fs-space-right);
+    bottom: auto;
+    left: auto;
+    align-items: flex-end;
+}
+
+/* Prompts float above the bottom progress bar */
+.fluid_player_mobile.isLandscape .skip_button,
+.fluid_player_mobile.isLandscape .next_video_button,
+.fluid_player_mobile.isLandscape .skip_button.shiftup,
+.fluid_player_mobile.isLandscape.expanded.controls_visible .skip_button,
+.fluid_player_mobile.isLandscape.expanded.controls_visible .next_video_button {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);
+}
+
+.fluid_player_mobile.isLandscape .vpn_button,
+.fluid_player_mobile.isLandscape.expanded.controls_visible .vpn_button {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);
+}
+
+.fluid_player_mobile.isLandscape .fluid_subtitles_container {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+}
+
+.fluid_player_mobile.isLandscape.controls_visible.expanded .fluid_subtitles_container {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);
+}
+
+/* ============================================================================
+   8. Compact landscape
+   ---------------------------------------------------------------------------- */
+
+@media (max-height: 520px) {
+    .fluid_player_mobile.isLandscape {
+        --fs-space-top: calc(env(safe-area-inset-top, 0px) + 6px);
+        --fs-space-bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
+    }
+
+    .fluid_player_mobile.isLandscape .fluid_mobile_top_bar {
+        top: calc(env(safe-area-inset-top, 0px) + 6px);
+        gap: 8px;
+    }
+
+    .fluid_player_mobile.isLandscape .fluid_mobile_top_tools {
+        padding: 3px 4px;
+        gap: 2px;
+    }
+
+    .fluid_player_mobile.isLandscape .fluid_mobile_top_tools .fluid_button {
+        width: 34px;
+        height: 34px;
+        padding: 7px;
+        border-radius: 10px;
+    }
+
+    .fluid_player_mobile.isLandscape .fluid_mobile_top_tools .fluid_button svg {
+        width: 17px;
+        height: 17px;
+    }
+
+    .fluid_player_mobile.isLandscape .fluid_mobile_bottom_tools {
+        padding: 3px 4px;
+        gap: 2px;
+    }
+
+    .fluid_player_mobile.isLandscape .fluid_mobile_bottom_tools .fluid_control_playpause {
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+    }
+
+    .fluid_player_mobile.isLandscape .fluid_mobile_bottom_tools .fluid_control_playpause svg {
+        width: 17px;
+        height: 17px;
+    }
+
+    .fluid_player_mobile.isLandscape .fluid_mobile_bottom_tools .fluid_control_skip_forward,
+    .fluid_player_mobile.isLandscape .fluid_mobile_bottom_tools .fluid_control_skip_backward {
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+    }
+
+    .fluid_player_mobile.isLandscape .fluid_mobile_bottom_tools .fluid_control_skip_forward svg,
+    .fluid_player_mobile.isLandscape .fluid_mobile_bottom_tools .fluid_control_skip_backward svg {
+        width: 15px;
+        height: 15px;
+    }
+
+    .fluid_player_mobile.isLandscape .fluid_mobile_bar_row {
+        padding: 2px 6px 2px 10px;
+    }
+
+    .fluid_player_mobile.isLandscape .fluid_mobile_bar_end .fluid_control_fullscreen {
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+    }
+
+    .fluid_player_mobile.isLandscape .fluid_mobile_bar_end .fluid_control_fullscreen svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    .fluid_player_mobile.isLandscape .fluid_mobile_seek {
+        height: 32px;
+        min-height: 32px;
+        border-radius: 16px;
+    }
+
+    .fluid_player_mobile.isLandscape .fluid_mobile_seek::before,
+    .fluid_player_mobile.isLandscape .fluid_mobile_seek_loaded,
+    .fluid_player_mobile.isLandscape .fluid_mobile_seek_current {
+        border-radius: 16px;
+    }
+
+    .fluid_player_mobile.isLandscape .fluid_controls_bottom_container {
+        top: calc(env(safe-area-inset-top, 0px) + 50px);
+        bottom: auto;
+    }
+
+    .fluid_player_mobile.isLandscape .popwindow,
+    .fluid_player_mobile.isLandscape.expanded.controls_visible .popwindow {
+        height: 92%;
+    }
 }
