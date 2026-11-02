@@ -129,6 +129,34 @@ export default class HLSPlayer extends EventEmitter {
       });
     }
 
+    const level = this.hls.levels[this.getIndexes(this.getCurrentVideoLevelID()).levelID];
+    const audioLevel = this.hls.audioTracks[this.hls.audioTrack];
+
+    let levelInitData = null;
+    let audioLevelInitData = null;
+
+    // Right after a quality switch, hls.js may not have loaded the new level's init segment yet.
+    if (fragments[-1]) {
+      if (fragments[-1].status !== DownloadStatus.DOWNLOAD_COMPLETE) {
+        await this.downloadFragment(fragments[-1], -1);
+      }
+      levelInitData = new Uint8Array(await this.client.downloadManager.getEntry(fragments[-1].getContext()).getDataFromBlob());
+    }
+
+    if (audioFragments[-1]) {
+      if (audioFragments[-1].status !== DownloadStatus.DOWNLOAD_COMPLETE) {
+        await this.downloadFragment(audioFragments[-1], -1);
+      }
+      audioLevelInitData = new Uint8Array(await this.client.downloadManager.getEntry(audioFragments[-1].getContext()).getDataFromBlob());
+    }
+
+    // A level is fMP4 exactly when its playlist named an initialization segment, and
+    // those go to the merger — HLS2MP4 demuxes transport streams. A level that carries
+    // its own audio rather than taking it from a separate rendition belongs there too,
+    // so the audio side is only handed over when it is a rendition of its own.
+    const mergeable = levelInitData && (audioLevelInitData || audioFragments.length === 0);
+
+    // Pin last: only getEntry and the catch below unpin, so nothing that can throw may run in between.
     zippedFragments.forEach((data) => {
       data.fragment.addReference(ReferenceTypes.SAVER);
       data.getEntry = async () => {
@@ -149,22 +177,8 @@ export default class HLSPlayer extends EventEmitter {
       };
     });
 
-    const level = this.hls.levels[this.getIndexes(this.getCurrentVideoLevelID()).levelID];
-    const audioLevel = this.hls.audioTracks[this.hls.audioTrack];
-
-    let levelInitData = null;
-    let audioLevelInitData = null;
-
-    if (fragments[-1]) {
-      levelInitData = new Uint8Array(await this.client.downloadManager.getEntry(fragments[-1].getContext()).getDataFromBlob());
-    }
-
-    if (audioFragments[-1]) {
-      audioLevelInitData = new Uint8Array(await this.client.downloadManager.getEntry(audioFragments[-1].getContext()).getDataFromBlob());
-    }
-
     try {
-      if (levelInitData && audioLevelInitData) {
+      if (mergeable) {
         const {MP4Merger} = await import('../../modules/dash2mp4/mp4merger.mjs');
 
         const mp4merger = new MP4Merger(options.registerCancel);
@@ -175,7 +189,11 @@ export default class HLSPlayer extends EventEmitter {
           }
         });
 
-        const blob = await mp4merger.convert(level.details.totalduration, levelInitData.buffer, audioLevel.details.totalduration, audioLevelInitData.buffer, zippedFragments);
+        const blob = await mp4merger.convert(
+            level.details.totalduration, levelInitData.buffer,
+            audioLevelInitData ? audioLevel.details.totalduration : 0,
+            audioLevelInitData ? audioLevelInitData.buffer : null,
+            zippedFragments);
 
         return {
           extension: 'mp4',
@@ -259,6 +277,13 @@ export default class HLSPlayer extends EventEmitter {
 
     this.hls.on(Hls.Events.AUDIO_TRACK_UPDATED, (a, data) => {
       this.trackUpdated(data.details, 1);
+    });
+
+    // After a fatal error hls.js loads nothing more. A manifest or playlist that could not
+    // be loaded gives <video> no error of its own, so without this the player would wait
+    // forever instead of saying it failed.
+    this.hls.on(Hls.Events.ERROR, (event, data) => {
+      if (data.fatal) this.emit(DefaultPlayerEvents.ERROR, data);
     });
   }
 

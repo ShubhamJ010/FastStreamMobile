@@ -151,6 +151,8 @@ export function HLSLoaderFactory(player) {
     }
 
     loadNonFragmentInternal() {
+      // A playlist, not a key or a fragment.
+      const isPlaylist = this.context.frag === undefined;
       this.loader = player.getClient().downloadManager.getFile({
         ...this.context,
         config: this.config,
@@ -161,7 +163,16 @@ export function HLSLoaderFactory(player) {
       }, {
         onSuccess: async (entry, xhr) => {
           this.copyStats(entry.stats);
-          const data = await entry.getDataFromBlob();
+          let data = await entry.getDataFromBlob();
+
+          // Lets a player rewrite manifests before hls.js parses them.
+          if (player.processPlaylist) {
+            try {
+              data = player.processPlaylist(this.context, data);
+            } catch (e) {
+              console.error('Error in processPlaylist:', e);
+            }
+          }
 
           if (this.callbacks) {
             this.callbacks.onSuccess({
@@ -177,8 +188,15 @@ export function HLSLoaderFactory(player) {
         onFail: (entry) => {
           setTimeout(() => {
             this.copyStats(entry.stats);
-            if (this.callbacks) {
-              if (this.callbacks?.onAbort) this.callbacks.onAbort(this.stats, this.context, null, null);
+            if (!this.callbacks) return;
+            if (isPlaylist) {
+              // hls.js's playlist loader passes no onAbort, so a failure reported as one
+              // reached nobody, and the player waited forever. As an error, hls.js retries
+              // or switches level as it would for its own loader, and fails once it gives up.
+              const error = this.stats.error || {code: 0, text: 'Download failed'};
+              this.callbacks.onError?.(error, this.context, null, this.stats);
+            } else {
+              this.callbacks.onAbort?.(this.stats, this.context, null, null);
             }
           }, 1000);
         },

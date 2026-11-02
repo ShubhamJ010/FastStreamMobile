@@ -18,6 +18,7 @@ import {MiniplayerPositions} from './options/defaults/MiniplayerPositions.mjs';
 import {SecureMemory} from './modules/SecureMemory.mjs';
 import {CSSFilterUtils} from './utils/CSSFilterUtils.mjs';
 import {DaltonizerTypes} from './options/defaults/DaltonizerTypes.mjs';
+import {AspectRatios} from './options/defaults/AspectRatios.mjs';
 import {Utils} from './utils/Utils.mjs';
 import {DefaultToolSettings} from './options/defaults/ToolSettings.mjs';
 import {AudioAnalyzer} from './modules/analyzer/AudioAnalyzer.mjs';
@@ -33,6 +34,7 @@ import {SyncedAudioPlayer} from './players/SyncedAudioPlayer.mjs';
 import {AlertPolyfill} from './utils/AlertPolyfill.mjs';
 import {MessageTypes} from './enums/MessageTypes.mjs';
 import {LevelManager} from './players/LevelManager.mjs';
+import {VpnPrompt} from './ui/VpnPrompt.mjs';
 
 
 /**
@@ -81,6 +83,7 @@ export class FastStreamClient extends EventEmitter {
       videoDaltonizerType: DaltonizerTypes.NONE,
       videoDaltonizerStrength: 1,
       videoZoom: 1,
+      videoAspectRatio: AspectRatios.AUTO,
       seekStepSize: 0.2,
       defaultQuality: 'Auto',
       toolSettings: Utils.mergeOptions(DefaultToolSettings, {}),
@@ -119,6 +122,7 @@ export class FastStreamClient extends EventEmitter {
     this.keybindManager = new KeybindManager(this);
     this.downloadManager = new DownloadManager(this);
     this.sourcesBrowser = new SourcesBrowser(this);
+    this.vpnPrompt = new VpnPrompt(this);
     this.videoAnalyzer = new VideoAnalyzer(this);
     this.audioAnalyzer = new AudioAnalyzer(this);
     this.frameExtractor = new PreviewFrameExtractor(this);
@@ -143,6 +147,10 @@ export class FastStreamClient extends EventEmitter {
     this.player = null;
     this.syncedAudioPlayer = null;
     this.previewPlayer = null;
+    this.sourceChange = null;
+    this.previewPlayerSetup = null;
+    this.customChapters = null;
+    this.subtitleTimelineOffset = 0;
     this.saveSeek = true;
     this.pastSeeks = [];
     this.pastUnseeks = [];
@@ -244,9 +252,19 @@ export class FastStreamClient extends EventEmitter {
 
   /**
    * Checks if user interaction is needed to start playback.
+   *
+   * What the interaction unlocks is FastStream downloading the video itself, ahead of
+   * where it is playing. Direct playback hands the url to the browser and downloads
+   * nothing of its own, so there is nothing for an interaction to unlock and nothing to
+   * ask the user for.
+   *
    * @return {boolean}
    */
   needsUserInteraction() {
+    if (this.source && this.source.mode === PlayerModes.DIRECT) {
+      return false;
+    }
+
     return this._needsUserInteraction && !this.state.hasUserInteracted && !this.state.playing;
   }
 
@@ -340,6 +358,7 @@ export class FastStreamClient extends EventEmitter {
     this.options.videoDaltonizerType = options.videoDaltonizerType;
     this.options.videoDaltonizerStrength = options.videoDaltonizerStrength;
     this.options.videoZoom = options.videoZoom;
+    this.options.videoAspectRatio = options.videoAspectRatio || AspectRatios.AUTO;
     this.options.previewEnabled = options.previewEnabled;
     this.options.videoDelay = options.videoDelay;
     document.body.dataset.theme = options.colorTheme;
@@ -412,15 +431,22 @@ export class FastStreamClient extends EventEmitter {
 
     const filterStr = CSSFilterUtils.getFilterString(this.options);
     const transformStr = CSSFilterUtils.getTransformString(this.options);
+    const aspectStyle = CSSFilterUtils.getAspectRatioStyles(this.options);
 
     if (this.player) {
       this.player.getVideo().style.filter = filterStr;
       this.player.getVideo().style.transform = transformStr;
+      this.player.getVideo().style.objectFit = aspectStyle.objectFit;
+      this.player.getVideo().style.aspectRatio = aspectStyle.aspectRatio;
+      this.player.getVideo().style.setProperty('--video-aspect-ratio', aspectStyle.aspectRatio);
+      this.player.getVideo().classList.toggle('fixed-aspect-ratio', !!aspectStyle.aspectRatio);
     }
 
     if (this.previewPlayer) {
       this.previewPlayer.getVideo().style.filter = filterStr;
       this.previewPlayer.getVideo().style.transform = transformStr;
+      this.previewPlayer.getVideo().style.objectFit = aspectStyle.objectFit;
+      this.previewPlayer.getVideo().style.aspectRatio = aspectStyle.aspectRatio;
     }
   }
 
@@ -446,7 +472,35 @@ export class FastStreamClient extends EventEmitter {
    * @return {Promise<void>}
    */
   loadSubtitleTrack(subtitleTrack, autoset = false) {
+    if (this.subtitleTimelineOffset) {
+      subtitleTrack.shift(this.subtitleTimelineOffset);
+    }
     return this.interfaceController.subtitlesManager.loadTrackAndActivateBest(subtitleTrack, autoset);
+  }
+
+  /**
+   * Declares how far the presentation timeline runs ahead of the timeline that subtitle
+   * cues are timed against.
+   *
+   * A player that stitches several independently-encoded streams together cannot always
+   * start exactly at source time zero, and subtitles supplied alongside the source are
+   * timed against the source. Tracks already loaded are shifted by the difference, and
+   * tracks loaded later are shifted as they arrive.
+   *
+   * @param {number} offset - Seconds the presentation leads the subtitle timeline by.
+   */
+  setSubtitleTimelineOffset(offset) {
+    offset = offset || 0;
+    const delta = offset - this.subtitleTimelineOffset;
+    if (!delta) {
+      return;
+    }
+
+    this.subtitleTimelineOffset = offset;
+    this.interfaceController.subtitlesManager.tracks.forEach((track) => {
+      track.shift(delta);
+    });
+    this.interfaceController.subtitlesManager.renderSubtitles();
   }
 
   /**
@@ -494,7 +548,7 @@ export class FastStreamClient extends EventEmitter {
       this.previewPlayer.getVideo().style.opacity = 0;
       clearTimeout(this.previewPlayerLoadingTimeout);
       this.previewPlayerLoadingTimeout = setTimeout(() => {
-        if (parseFloat(this.previewPlayer.getVideo().style.opacity) === 0) {
+        if (this.previewPlayer && parseFloat(this.previewPlayer.getVideo().style.opacity) === 0) {
           DOMElements.seekPreviewVideo.classList.add('loading');
         }
       }, 200);
@@ -716,21 +770,53 @@ export class FastStreamClient extends EventEmitter {
       return;
     }
 
-    if (this.player.getSource()) {
-      this.previewPlayer = await this.playerLoader.createPlayer(this.player.getSource().mode, this, {
-        isPreview: true,
+    // Building one takes several turns, and the field that says one exists is only filled
+    // in at the end of them. A second caller arriving in between — an options update while
+    // a source is being set, say — would build another and leave its video in the seek
+    // preview alongside the first, so callers join the build that is already running.
+    if (!this.previewPlayerSetup) {
+      this.previewPlayerSetup = this.buildPreviewPlayer();
+      this.previewPlayerSetup.catch(() => {}).then(() => {
+        this.previewPlayerSetup = null;
       });
-
-      // check if its yt mode
-      this.attachProcessorsToPlayer(this.previewPlayer);
-
-      await this.previewPlayer.setup();
-      this.bindPreviewPlayer(this.previewPlayer);
-
-      await this.previewPlayer.setSource(this.player.getSource());
-      this.interfaceController.addPreviewVideo(this.previewPlayer.getVideo());
-      this.updateCSSFilters();
     }
+
+    return this.previewPlayerSetup;
+  }
+
+  /**
+   * Builds the preview player for the source that is playing.
+   * @return {Promise<void>}
+   */
+  async buildPreviewPlayer() {
+    const source = this.player.getSource();
+    if (!source) {
+      return;
+    }
+
+    const previewPlayer = await this.playerLoader.createPlayer(source.mode, this, {
+      isPreview: true,
+    });
+
+    // check if its yt mode
+    this.attachProcessorsToPlayer(previewPlayer);
+
+    await previewPlayer.setup();
+    this.bindPreviewPlayer(previewPlayer);
+
+    await previewPlayer.setSource(source);
+
+    // The video being previewed can be torn down or replaced while its preview is still
+    // being built, and a preview of something that is no longer playing does not belong
+    // in the page.
+    if (this.previewPlayer || this.player?.getSource() !== source) {
+      previewPlayer.destroy();
+      return;
+    }
+
+    this.previewPlayer = previewPlayer;
+    this.interfaceController.addPreviewVideo(previewPlayer.getVideo());
+    this.updateCSSFilters();
   }
 
   initiateWebAudio() {
@@ -750,10 +836,36 @@ export class FastStreamClient extends EventEmitter {
 
   /**
    * Sets the current source and initializes the player.
+   *
+   * Setting a source takes many turns: a player is built, handed the source, given a
+   * video element in the page and an audio context of its own. Two of these running at
+   * once would each do all of that, each leaving its video in the page and its audio
+   * context over the other's, so a source that is asked for while one is being set waits
+   * its turn.
+   *
    * @param {Object} source - Source object.
    * @return {Promise<void>}
    */
-  async setSource(source) {
+  setSource(source) {
+    const run = () => this.setSourceInternal(source);
+    const change = this.sourceChange ? this.sourceChange.then(run, run) : run();
+
+    this.sourceChange = change;
+    change.catch(() => {}).then(() => {
+      if (this.sourceChange === change) {
+        this.sourceChange = null;
+      }
+    });
+
+    return change;
+  }
+
+  /**
+   * Sets the current source and initializes the player, one at a time.
+   * @param {Object} source - Source object.
+   * @return {Promise<void>}
+   */
+  async setSourceInternal(source) {
     try {
       source = source.copy();
 
@@ -793,6 +905,9 @@ export class FastStreamClient extends EventEmitter {
       console.log('setSource', source);
       await this.resetPlayer();
       this.source = source;
+      this.subtitleTimelineOffset = 0;
+      // Did it come through Firefox VPN, which leaves FastStream's requests out? (VpnPrompt.mjs)
+      this.vpnPrompt.check(source);
 
       if (source.defaultLevelInfo?.level !== undefined) {
         this.getLevelManager().setCurrentVideoLevelID(source.defaultLevelInfo.level);
@@ -844,7 +959,9 @@ export class FastStreamClient extends EventEmitter {
       this.setSeekSave(true);
 
       if (this.player.getSource()) {
-        await this.setupPreviewPlayer();
+        await this.setupPreviewPlayer().catch((e) => {
+          console.error(e);
+        });
 
         await this.videoAnalyzer.setSource(this.player.getSource());
 
@@ -863,12 +980,15 @@ export class FastStreamClient extends EventEmitter {
       }
 
       this.loadProgressData().then(async () => {
+        // Another source may have been set in the meantime
+        if (this.source !== source) return;
         this.disableProgressSave = true;
 
         // Wait for the player to be ready
         if (this.initPromise) {
           await this.initPromise;
         }
+        if (this.source !== source) return;
 
         if (timeFromURL) {
           this.setSeekSave(false);
@@ -1279,6 +1399,8 @@ export class FastStreamClient extends EventEmitter {
       this.source = null;
     }
 
+    this.customChapters = null;
+
     if (this.previewPlayer) {
       try {
         this.previewPlayer.destroy();
@@ -1563,7 +1685,9 @@ export class FastStreamClient extends EventEmitter {
   undoSeek() {
     if (this.pastSeeks.length) {
       this.pastUnseeks.push(this.player.currentTime);
-      this.player.currentTime = this.pastSeeks.pop();
+      this.setSeekSave(false);
+      this.currentTime = this.pastSeeks.pop();
+      this.setSeekSave(true);
       this.interfaceController.updateMarkers();
     }
   }
@@ -1574,7 +1698,9 @@ export class FastStreamClient extends EventEmitter {
   redoSeek() {
     if (this.pastUnseeks.length) {
       this.pastSeeks.push(this.player.currentTime);
-      this.player.currentTime = this.pastUnseeks.pop();
+      this.setSeekSave(false);
+      this.currentTime = this.pastUnseeks.pop();
+      this.setSeekSave(true);
       this.interfaceController.updateMarkers();
     }
   }
@@ -1622,6 +1748,16 @@ export class FastStreamClient extends EventEmitter {
    * @param {number} value
    */
   set currentTime(value) {
+    if (Number.isNaN(value)) {
+      return;
+    }
+    // Relative seeks near either end ask for a time outside the video.
+    value = Math.max(0, value);
+    const duration = this.duration;
+    if (duration > 0 && Number.isFinite(duration)) {
+      value = Math.min(value, duration);
+    }
+
     if (this.saveSeek) {
       this.savePosition();
     }
@@ -1653,7 +1789,7 @@ export class FastStreamClient extends EventEmitter {
    * @return {boolean}
    */
   get paused() {
-    return this.player?.paused || true;
+    return this.player?.paused ?? true;
   }
 
   /**
@@ -1988,7 +2124,39 @@ export class FastStreamClient extends EventEmitter {
    * @return {Array}
    */
   get chapters() {
-    return this.player?.chapters || [];
+    return this.customChapters || this.player?.chapters || [];
+  }
+
+  /**
+   * Sets the chapters to mark on the timeline.
+   *
+   * A video often brings its own — a YouTube video's are read out of its description —
+   * but one that does not can be given them by whoever loaded it. They describe the
+   * video that is playing, so they are dropped when it is replaced.
+   *
+   * @param {Array<Object>} chapters - `{name, startTime, endTime}`, in any order. A
+   *     chapter with no end runs until the next one starts, or to the end of the video.
+   */
+  setChapters(chapters) {
+    const cleaned = (chapters || []).filter((chapter) => {
+      return chapter && isFinite(chapter.startTime);
+    }).map((chapter) => {
+      return {
+        name: chapter.name ? String(chapter.name) : 'Chapter',
+        startTime: Math.max(0, chapter.startTime),
+        endTime: isFinite(chapter.endTime) ? chapter.endTime : null,
+      };
+    }).sort((a, b) => a.startTime - b.startTime);
+
+    cleaned.forEach((chapter, i) => {
+      if (chapter.endTime === null) {
+        const next = cleaned[i + 1];
+        chapter.endTime = next ? next.startTime : (this.duration || Infinity);
+      }
+    });
+
+    this.customChapters = cleaned.length ? cleaned : null;
+    this.interfaceController.updateSkipSegments();
   }
 
   /**
@@ -2022,4 +2190,3 @@ export class FastStreamClient extends EventEmitter {
     this.player.getVideo().style.objectFit = 'cover';
   }
 }
-

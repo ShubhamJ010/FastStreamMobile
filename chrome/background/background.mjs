@@ -10,6 +10,7 @@ import {RuleManager} from './NetRequestRuleManager.mjs';
 import {SponsorBlockIntegration} from './SponsorBlockIntegration.mjs';
 import {StreamSaverBackend} from './StreamSaverBackend.mjs';
 import {TabTracker} from './TabTracker.mjs';
+import {VpnProxyMirror} from './VpnProxyMirror.mjs';
 
 let Options = {};
 const OptionsCache = {};
@@ -22,6 +23,46 @@ const ruleManager = new RuleManager();
 
 
 let CustomSourcePatternsMatcher = new MultiRegexMatcher();
+
+// FastStream's requests follow the page's through Firefox VPN (VpnProxyMirror.mjs). Only
+// builds that declare the optional "proxy" permission have it: the Firefox ones (build.mjs).
+const VpnMirror = chrome.runtime.getManifest().optional_permissions?.includes('proxy') ?
+  new VpnProxyMirror({
+    origin: chrome.runtime.getURL(''),
+    getProxyApi: () => chrome.proxy || null,
+  }) : null;
+
+/**
+ * Reads whether FastStream holds the "proxy" permission, for VpnMirror.
+ * @return {Promise<boolean>}
+ */
+async function refreshProxyPermission() {
+  let permitted = false;
+  try {
+    permitted = await chrome.permissions.contains({permissions: ['proxy']});
+  } catch (e) {
+    console.warn('Could not read the proxy permission', e);
+  }
+  VpnMirror.setPermitted(permitted);
+  return permitted;
+}
+
+if (VpnMirror) {
+  refreshProxyPermission();
+  chrome.permissions.onAdded.addListener(async (added) => {
+    if (!added.permissions?.includes('proxy')) return;
+    const permitted = await refreshProxyPermission();
+    if (!permitted) return;
+    // A player that offered to follow the VPN loads its source again, now through it.
+    for (const tab of await BackgroundUtils.queryTabs()) {
+      if (tab.id === undefined) continue;
+      chrome.tabs.sendMessage(tab.id, {type: MessageTypes.VPN_ALLOWED}, () => {
+        BackgroundUtils.checkMessageError('vpn_allowed', true);
+      });
+    }
+  });
+  chrome.permissions.onRemoved.addListener(() => refreshProxyPermission());
+}
 
 const sponsorBlockBackend = new SponsorBlockIntegration();
 sponsorBlockBackend.setup();
@@ -68,11 +109,13 @@ async function onClicked(tabobj) {
       BackgroundUtils.updateTabIcon(tab);
 
       if (tab.isOn) {
+        notifyTabEnabled(tab);
         openPlayersWithSources(tab);
       } else {
         let hasPlayer = false;
         for (const frame of tab.getFrames()) {
-          if (frame.isPlayer) {
+          // A player that is still loading has to go too.
+          if (frame.isPlayer || frame.playerOpening) {
             hasPlayer = true;
             break;
           }
@@ -101,6 +144,7 @@ chrome.action.onClicked.addListener(onClicked);
 
 chrome.tabs.onRemoved.addListener((tabid, removed) => {
   Tabs.removeTab(tabid);
+  VpnMirror?.forgetTab(tabid);
 });
 
 chrome.tabs.onUpdated.addListener((tabid, changeInfo, tabobj) => {
@@ -147,6 +191,7 @@ chrome.tabs.onUpdated.addListener((tabid, changeInfo, tabobj) => {
     } else if (shouldAutoEnable && !tab.regexMatched) {
       tab.regexMatched = true;
       tab.isOn = true;
+      notifyTabEnabled(tab);
       openPlayersWithSources(tab);
     } else if (!shouldAutoEnable && tab.regexMatched) {
       tab.isOn = false;
@@ -160,6 +205,31 @@ chrome.tabs.onUpdated.addListener((tabid, changeInfo, tabobj) => {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === MessageTypes.PING) {
     sendResponse(MessageTypes.PONG);
+    return;
+  } else if (msg.type === MessageTypes.VPN_STATUS) {
+    // The player, about its source: did the page reach it through Firefox VPN, and may
+    // FastStream follow (VpnProxyMirror.mjs)? Only FastStream's own pages may ask: the
+    // answer adds the URL's host to those that follow the VPN.
+    if (!VpnMirror || !String(sender.url || '').startsWith(chrome.runtime.getURL(''))) {
+      sendResponse(null);
+      return;
+    }
+    sendResponse(VpnMirror.status(String(msg.url || ''), !!sender.tab?.incognito, sender.tab?.id));
+    return;
+  } else if (msg.type === MessageTypes.VPN_OPEN_PERMISSION) {
+    // The player's Firefox VPN button: a player in a page has no permissions API, so the
+    // permissions page asks, at its proxy row, in a tab of its own next to the video's.
+    if (!VpnMirror || !String(sender.url || '').startsWith(chrome.runtime.getURL(''))) {
+      sendResponse(false);
+      return;
+    }
+    const create = {url: chrome.runtime.getURL('perms.html') + '#proxy'};
+    if (sender.tab?.id !== undefined) {
+      create.openerTabId = sender.tab.id;
+      create.index = sender.tab.index + 1;
+    }
+    chrome.tabs.create(create).catch((e) => console.error('Opening the permissions page failed', e));
+    sendResponse(true);
     return;
   } else if (msg.type === MessageTypes.LOAD_OPTIONS) {
     loadOptions();
@@ -181,6 +251,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   const tab = Tabs.getTabOrCreate(sender.tab.id);
   const frame = tab.getFrameOrCreate(sender.frameId);
+
+  if (msg.type === MessageTypes.IS_TAB_ENABLED) {
+    // Lets a site integration hold off on doing any work, such as calling a site's API,
+    // until the user has actually switched FastStream on for this tab.
+    sendResponse({enabled: !!tab.isOn});
+    return;
+  }
+
+  if (msg.type === MessageTypes.CLAIM_FRAME) {
+    setFrameClaim(frame, msg.claimed !== false);
+    return;
+  }
 
   if (msg.type === MessageTypes.PLAYER_LOADED) {
     if (Logging) console.log('Found FastStream window', frame);
@@ -310,6 +392,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   } else if (msg.type === MessageTypes.DETECTED_SOURCE) {
     const mode = URLUtils.getModeFromExtension(msg.ext);
     const headers = msg.headers || {};
+
+    // A site integration that already has the subtitle text can pass it along directly,
+    // rather than leaving a URL for the player to fetch.
+    if (Array.isArray(msg.subtitles)) {
+      const subtitles = frame.getSubtitles();
+      msg.subtitles.forEach((sub) => {
+        if (!sub || !sub.data) return;
+        if (subtitles.some((existing) => existing.label === sub.label && existing.data === sub.data)) return;
+
+        subtitles.push({
+          data: sub.data,
+          label: sub.label,
+          language: sub.language,
+          time: Date.now(),
+        });
+      });
+    }
+
     onSourceRecieved({
       url: msg.url,
       requestId: -1,
@@ -453,6 +553,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     return sponsorBlockBackend.onPlayerMessage(msg, sendResponse);
+  } else if (msg.type === MessageTypes.REQUEST_YT_PO_TOKENS) {
+    const pageFrame = frame.pageFrame;
+    if (!pageFrame) {
+      sendResponse({error: 'No YouTube page is available to mint playback tokens.'});
+      return;
+    }
+
+    chrome.tabs.sendMessage(pageFrame.tab.tabId, {
+      type: MessageTypes.MINT_YT_PO_TOKENS,
+      videoId: msg.videoId,
+      visitorData: msg.visitorData,
+    }, {
+      frameId: pageFrame.frameId,
+    }, (response) => {
+      const error = chrome.runtime.lastError;
+      sendResponse(error ? {error: error.message} : response || {error: 'No response from the YouTube token bridge.'});
+    });
+    return true;
   } else if (msg.type === MessageTypes.REQUEST_YT_DATA) {
     const pageFrame = frame.pageFrame;
     if (!pageFrame) {
@@ -1022,6 +1140,64 @@ function addSource(frame, url, mode, headers) {
   });
 }
 
+// Enough to cover the manifests a page asks for before it starts playing, which are the
+// only ones worth handing back. Past that it is fetching media, and a lecture left
+// playing in the site's own player would otherwise pile up segments indefinitely.
+const MAX_HELD_SOURCES = 32;
+
+function holdSource(frame, url, mode, headers) {
+  const held = frame.getHeldSources();
+  if (held.length >= MAX_HELD_SOURCES || held.some((source) => source.url === url)) {
+    return;
+  }
+
+  if (Logging) console.log('Holding source', url, 'for the integration handling', frame.url);
+
+  held.push({url, mode, headers});
+}
+
+/**
+ * Marks a frame as being handled by a site integration, or hands it back.
+ *
+ * An integration that assembles a source out of several others — Panopto stitches a
+ * session together out of one stream per camera — has to beat the page to the player,
+ * because the page fetches those same streams itself and any one of them would otherwise
+ * be opened on its own. While the claim stands, sources detected the ordinary way are
+ * held rather than tracked, and they are handed over only if the integration turns out
+ * not to be able to handle the page after all.
+ *
+ * @param {FrameHolder} frame - The frame being claimed or released.
+ * @param {boolean} claimed - Whether an integration is handling it.
+ */
+function setFrameClaim(frame, claimed) {
+  if (frame.claimed === claimed) {
+    return;
+  }
+
+  frame.claimed = claimed;
+
+  if (claimed) {
+    // The page may already have started fetching before the integration could claim it.
+    const tracked = frame.getSources();
+    tracked.forEach((source) => {
+      holdSource(frame, source.url, source.mode, source.headers);
+    });
+    tracked.length = 0;
+    return;
+  }
+
+  const held = frame.getHeldSources().splice(0);
+  if (Logging) console.log('Integration released', frame.url, '- releasing', held.length, 'source(s)');
+
+  held.forEach((source) => {
+    onSourceRecieved({
+      url: source.url,
+      requestId: -1,
+      customHeaders: source.headers,
+    }, frame, source.mode);
+  });
+}
+
 function collectSources(frame, remove = false) {
   const subtitles = [];
   const sources = [];
@@ -1141,12 +1317,30 @@ async function openPlayer(frame) {
     }, (response) => {
       BackgroundUtils.checkMessageError('player');
 
-      if (response === 'no_video') {
+      // Anything else, including no answer at all, means no player is coming.
+      if (!['redirect', 'replaceall', 'replace'].includes(response)) {
         frame.playerOpening = false;
       }
 
       resolve(response);
     });
+  });
+}
+
+/**
+ * Tells a tab's content scripts that FastStream has been switched on for it, so that any
+ * that deferred their work until then can get started.
+ * @param {Object} tab - The tab that was enabled.
+ */
+function notifyTabEnabled(tab) {
+  chrome.tabs.sendMessage(tab.tabId, {
+    type: MessageTypes.MESSAGE_FROM_CONTENT,
+    destination: 'custom',
+    data: {
+      type: 'tab-enabled',
+    },
+  }, () => {
+    BackgroundUtils.checkMessageError('tab_enabled', true);
   });
 }
 
@@ -1214,6 +1408,14 @@ async function onSourceRecieved(details, frame, mode) {
     }
   }
 
+  // A frame an integration has claimed gets its source from that integration alone.
+  // Whatever the page fetches meanwhile is likely to be part of what the integration is
+  // assembling, so it waits rather than racing it.
+  if (frame.claimed && details.requestId !== -1) {
+    holdSource(frame, url, mode, customHeaders);
+    return;
+  }
+
   addSource(frame, url, mode, customHeaders);
 
   const subs = await scrapeCaptionsTags(frame);
@@ -1258,6 +1460,11 @@ async function openPlayersWithSources(tab) {
       return {frame, videoSize: await getVideoSize(frame)};
     }));
 
+    // The tab may have been turned off while the videos were measured.
+    if (!tab.isOn) {
+      return;
+    }
+
     framesWithSources.sort((a, b) => {
       return b.videoSize - a.videoSize;
     });
@@ -1277,6 +1484,7 @@ if (EnvUtils.isChrome()) {
 }
 
 chrome.webRequest.onBeforeRequest.addListener((details) => {
+  VpnMirror?.noteRequest(details);
   const tab = Tabs.getTabOrCreate(details.tabId);
   const frame = tab.getFrameOrCreate(details.frameId);
   if (!frame.parent && details.parentFrameId !== -1) {
@@ -1327,6 +1535,7 @@ chrome.webRequest.onHeadersReceived.addListener(
       }
 
       if (BackgroundUtils.isSubtitles(ext)) {
+        VpnMirror?.noteSource(details);
         return handleSubtitles(url, frame, frame.requestHeaders.get(details.requestId));
       }
 
@@ -1357,6 +1566,7 @@ chrome.webRequest.onHeadersReceived.addListener(
         }
       }
 
+      VpnMirror?.noteSource(details);
       onSourceRecieved(details, frame, mode);
     }, {
       urls: ['<all_urls>'],

@@ -136,6 +136,20 @@ export default class DashPlayer extends EventEmitter {
       initialize();
     });
 
+    // A manifest dash.js could not load or parse is reported only here: <video> gets no
+    // error, so without this the player would wait forever. An error once the stream is
+    // up (a segment, a live refresh) leaves it playing, as before.
+    const manifestErrors = [
+      MediaPlayer.errors.MANIFEST_LOADER_PARSING_FAILURE_ERROR_CODE,
+      MediaPlayer.errors.MANIFEST_LOADER_LOADING_FAILURE_ERROR_CODE,
+      MediaPlayer.errors.DOWNLOAD_ERROR_ID_MANIFEST_CODE,
+    ];
+    this.dash.on('error', (e) => {
+      if (!initAlready && manifestErrors.includes(e.error?.code)) {
+        this.emit(DefaultPlayerEvents.ERROR, e);
+      }
+    });
+
     this.dash.on('REPRESENTATION_UPDATED', (a) => {
       const rep = a.representation;
       this.extractFragments(rep);
@@ -399,26 +413,6 @@ export default class DashPlayer extends EventEmitter {
       });
     }
 
-    zippedFragments.forEach((data) => {
-      data.fragment.addReference(ReferenceTypes.SAVER);
-      data.getEntry = async () => {
-        if (data.fragment.status !== DownloadStatus.DOWNLOAD_COMPLETE) {
-          while (true) {
-            try {
-              await this.downloadFragment(data.fragment, -1);
-              break;
-            } catch (e) {
-              if (e.message !== 'Aborted download') {
-                throw e;
-              }
-            }
-          }
-        }
-        data.fragment.removeReference(ReferenceTypes.SAVER);
-        return this.client.downloadManager.getEntry(data.fragment.getContext());
-      };
-    });
-
     const videoProcessor = this.dash.getStreamController()?.getActiveStream()?.getStreamProcessors()?.find((o) => o.getType() === 'video');
     const audioProcessor = this.dash.getStreamController()?.getActiveStream()?.getStreamProcessors()?.find((o) => o.getType() === 'audio');
 
@@ -450,8 +444,29 @@ export default class DashPlayer extends EventEmitter {
       }
     });
 
-    const videoMimeType = videoProcessor.getRepresentation().mimeType;
-    const audioMimeType = audioProcessor.getRepresentation().mimeType;
+    const videoMimeType = videoProcessor?.getRepresentation()?.mimeType;
+    const audioMimeType = audioProcessor?.getRepresentation()?.mimeType;
+
+    // Pin last: only getEntry and the catch below unpin, so nothing that can throw may run in between.
+    zippedFragments.forEach((data) => {
+      data.fragment.addReference(ReferenceTypes.SAVER);
+      data.getEntry = async () => {
+        if (data.fragment.status !== DownloadStatus.DOWNLOAD_COMPLETE) {
+          while (true) {
+            try {
+              await this.downloadFragment(data.fragment, -1);
+              break;
+            } catch (e) {
+              if (e.message !== 'Aborted download') {
+                throw e;
+              }
+            }
+          }
+        }
+        data.fragment.removeReference(ReferenceTypes.SAVER);
+        return this.client.downloadManager.getEntry(data.fragment.getContext());
+      };
+    });
 
     try {
       const blob = await dash2mp4.convert(videoMimeType, videoDuration, videoInitSegmentData, audioMimeType, audioDuration, audioInitSegmentData, zippedFragments);
