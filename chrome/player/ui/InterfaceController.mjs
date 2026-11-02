@@ -103,12 +103,17 @@ export class InterfaceController {
       DOMElements.playerContainer.classList.add('fluid_player_mobile');
       DOMElements.playPauseButtonBigCircle.classList.add('fluid_mobile_center_play');
       DOMElements.playPauseButtonBigCircle.style.display = ''; // Ensure it's visible on mobile
+      DOMElements.mobileControlBar.style.display = ''; // Reveal the minimal floating control bar
+      if (DOMElements.mobile2xBanner) DOMElements.mobile2xBanner.style.display = ''; // Reveal the 2x feedback banner
 
       // Swap big center play/pause icons to use mobileIcons.svg
       const playUse = DOMElements.playPauseButtonBigCircle.querySelector('.play use');
       const pauseUse = DOMElements.playPauseButtonBigCircle.querySelector('.pause use');
       if (playUse) playUse.setAttribute('href', 'assets/fluidplayer/static/mobileIcons.svg#play');
       if (pauseUse) pauseUse.setAttribute('href', 'assets/fluidplayer/static/mobileIcons.svg#pause');
+
+      this.setupMobileControlBar();
+      this.setupMobileGestures();
     }
 
     this.saveManager.setupUI();
@@ -227,6 +232,184 @@ export class InterfaceController {
     this.updateToolVisibility();
     this.fineTimeControls.reset();
     this.playbackRateChanger.reset();
+  }
+
+  /**
+   * Wires up the minimal floating mobile control bar (time elapsed / seek / time remaining).
+   * Mobile-only: only invoked from the isMobile() branch in the constructor.
+   */
+  setupMobileControlBar() {
+    const {mobileSeek, mobileSeekCurrent, mobileTimeElapsed, mobileTimeRemaining} = DOMElements;
+    if (!mobileSeek) return;
+
+    this.mobileSeeking = false;
+
+    const applyRatio = (clientX) => {
+      const rect = mobileSeek.getBoundingClientRect();
+      if (rect.width === 0) return;
+      let ratio = (clientX - rect.left) / rect.width;
+      ratio = Utils.clamp(ratio, 0, 1);
+      const duration = this.client.duration || 0;
+      const newTime = ratio * duration;
+      this.client.currentTime = newTime;
+      this.client.updateTime(newTime);
+      mobileSeekCurrent.style.width = (ratio * 100) + '%';
+      mobileTimeElapsed.textContent = StringUtils.formatTime(newTime);
+      mobileTimeRemaining.textContent = '-' + StringUtils.formatTime(Math.max(duration - newTime, 0));
+    };
+
+    const onDown = (e) => {
+      this.mobileSeeking = true;
+      this.client.setSeekSave(false);
+      // Capture the pointer so move/up are delivered to this element even if the
+      // finger leaves the thin track (otherwise touch pointerup can be lost and
+      // mobileSeeking would stay true, freezing the seek bar).
+      try {
+        mobileSeek.setPointerCapture(e.pointerId);
+      } catch (_) {}
+      applyRatio(e.clientX);
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    const onMove = (e) => {
+      if (!this.mobileSeeking) return;
+      applyRatio(e.clientX);
+      e.preventDefault();
+    };
+
+    const onUp = (e) => {
+      if (!this.mobileSeeking) return;
+      this.mobileSeeking = false;
+      this.client.setSeekSave(true);
+      try {
+        if (e && e.pointerId !== undefined) mobileSeek.releasePointerCapture(e.pointerId);
+      } catch (_) {}
+      // Force a final sync from the real playback position so the bar can never
+      // be left at the wrong spot (e.g. when events were dropped mid-seek).
+      const duration = this.client.duration || 0;
+      if (duration > 0) {
+        mobileSeekCurrent.style.width = Utils.clamp(this.state.currentTime / duration, 0, 1) * 100 + '%';
+      }
+    };
+
+    mobileSeek.addEventListener('pointerdown', onDown);
+    mobileSeek.addEventListener('pointermove', onMove);
+    mobileSeek.addEventListener('pointerup', onUp);
+    // pointerup / pointercancel may fire outside the track; also listen on window
+    // so mobileSeeking can never get stuck (a stuck flag would freeze the bar).
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  }
+
+  /**
+   * Mobile-only gesture: a single tap on the video background toggles the
+   * control bar (top tools, center play button, floating bar). Reuses the
+   * existing desktop toggleControlBar() so all mobile layers hide/show together.
+   * Attached in the capture phase on the player container (an ancestor of the
+   * video + controls) so a background tap can be intercepted before the desktop
+   * single-click handler (play/pause) fires.
+   */
+  setupMobileGestures() {
+    const container = DOMElements.playerContainer;
+    if (!container) return;
+
+    // A long-press on touch fires the native context menu / text selection, which
+    // cancels the pointer (pointercancel) and aborts the hold-to-2x timer before it
+    // can engage. Suppressing the context menu keeps the hold gesture alive.
+    container.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+    });
+
+    const isControlTarget = (el) => el.closest('.fluid_mobile_control_bar') ||
+        el.closest('.fluid_mobile_top_tools') ||
+        el.closest('.fluid_mobile_center_play') ||
+        el.closest('.fluid_html_on_pause') ||
+        el.closest('.popwindow') ||
+        el.closest('.fluid_controls_container');
+
+    let startX = 0;
+    let startY = 0;
+    let startTime = 0;
+    let moved = false;
+
+    // Hold-to-2x-speed state
+    let holdTimeout = null;
+    let lastSpeed = null;
+    let wasPlaying = false;
+
+    // Tap/double-tap state
+    let lastTapTime = 0;
+    let tapTimeout = null;
+
+    container.addEventListener('pointerdown', (e) => {
+      startX = e.clientX;
+      startY = e.clientY;
+      startTime = Date.now();
+      moved = false;
+
+      // Hold to play at 2x (only on the video background, not on controls)
+      if (!isControlTarget(e.target)) {
+        clearTimeout(holdTimeout);
+        holdTimeout = setTimeout(() => {
+          if (lastSpeed !== null || !this.client.player || moved) return;
+          wasPlaying = this.state.playing;
+          lastSpeed = this.client.playbackRate;
+          this.client.playbackRate = lastSpeed * 2;
+          this.client.play();
+          // Show the 2x feedback banner while holding
+          if (DOMElements.mobile2xBanner) DOMElements.mobile2xBanner.classList.add('show');
+        }, 500);
+      }
+    }, true);
+
+    container.addEventListener('pointermove', (e) => {
+      if (Math.abs(e.clientX - startX) > 10 || Math.abs(e.clientY - startY) > 10) {
+        moved = true;
+        clearTimeout(holdTimeout); // a drag/seek cancels the hold
+      }
+    }, true);
+
+    const endHold = () => {
+      if (lastSpeed !== null) {
+        this.client.playbackRate = lastSpeed;
+        lastSpeed = null;
+        if (!wasPlaying) this.client.pause();
+      }
+      // Always clear the 2x feedback banner on release/cancel
+      if (DOMElements.mobile2xBanner) DOMElements.mobile2xBanner.classList.remove('show');
+      clearTimeout(holdTimeout);
+    };
+    container.addEventListener('pointerup', endHold, true);
+    container.addEventListener('pointercancel', endHold, true);
+
+    container.addEventListener('click', (e) => {
+      // Treat as a tap only if it didn't move (drag/seek) and was quick
+      if (moved || Date.now() - startTime > 400) return;
+
+      // Ignore taps on actual controls so they keep their own behavior
+      if (isControlTarget(e.target)) return;
+
+      // Prevent the desktop singleClickAction (play/pause) from also firing
+      e.stopPropagation();
+      e.preventDefault();
+
+      const now = Date.now();
+      if (now - lastTapTime < 300) {
+        // Double tap -> fullscreen (cancel the pending single-tap toggle)
+        clearTimeout(tapTimeout);
+        tapTimeout = null;
+        lastTapTime = 0;
+        this.fullscreenToggle();
+      } else {
+        lastTapTime = now;
+        // Single tap -> toggle controls (deferred so a 2nd tap can become fullscreen)
+        clearTimeout(tapTimeout);
+        tapTimeout = setTimeout(() => {
+          this.toggleControlBar();
+        }, 300);
+      }
+    }, true);
   }
 
   failedToLoad(reason) {
@@ -391,27 +574,32 @@ export class InterfaceController {
     });
 
     DOMElements.playerContainer.addEventListener('mouseleave', (e)=>{
+      // Touch devices emit synthetic mouseleave events after a tap; on mobile
+      // control visibility is driven by taps/focus, not hover, so ignore this.
+      if (EnvUtils.isMobile()) return;
       this.queueControlsHide(1);
     });
 
     let holdTimeout = null;
     let lastSpeed = null;
     let wasPlaying = false;
-    DOMElements.videoContainer.addEventListener('mousedown', (e)=>{
-      if (e.button === 0) {
-        clearTimeout(holdTimeout);
-        holdTimeout = setTimeout(() => {
-          if (lastSpeed !== null || !this.client.player) {
-            return;
-          }
-          wasPlaying = this.state.playing;
-          lastSpeed = this.client.playbackRate;
-          this.client.playbackRate = lastSpeed * 2;
+    if (!EnvUtils.isMobile()) {
+      DOMElements.videoContainer.addEventListener('mousedown', (e)=>{
+        if (e.button === 0) {
+          clearTimeout(holdTimeout);
+          holdTimeout = setTimeout(() => {
+            if (lastSpeed !== null || !this.client.player) {
+              return;
+            }
+            wasPlaying = this.state.playing;
+            lastSpeed = this.client.playbackRate;
+            this.client.playbackRate = lastSpeed * 2;
 
-          this.client.play();
-        }, 800);
-      }
-    });
+            this.client.play();
+          }, 800);
+        }
+      });
+    }
 
     const stopSpeedUp = () => {
       if (lastSpeed !== null) {
@@ -988,15 +1176,18 @@ export class InterfaceController {
   }
 
   onControlsMouseEnter() {
+    if (EnvUtils.isMobile()) return;
     this.showControlBar();
     this.mouseOverControls = true;
   }
   onControlsMouseLeave() {
+    if (EnvUtils.isMobile()) return;
     this.mouseOverControls = false;
     if (document.activeElement && DOMElements.controlsContainer.contains(document.activeElement)) document.activeElement.blur();
     this.queueControlsHide();
   }
   onPlayerMouseMove() {
+    if (EnvUtils.isMobile()) return;
     if (Date.now() < this.mouseActivityCooldown) {
       return;
     }
@@ -1007,7 +1198,10 @@ export class InterfaceController {
   queueControlsHide(time) {
     clearTimeout(this.hideControlBarTimeout);
     this.hideControlBarTimeout = setTimeout(() => {
-      if (!this.focusingControls && !this.mouseOverControls && !this.isBigPlayButtonVisible() && this.state.playing && this.toolManager.canHideControls()) {
+      // On mobile the big play button is always shown (it doubles as the center
+      // button), so it must not block auto-hide.
+      const bigPlayBlocking = EnvUtils.isMobile() ? false : this.isBigPlayButtonVisible();
+      if (!this.focusingControls && !this.mouseOverControls && !bigPlayBlocking && this.state.playing && this.toolManager.canHideControls()) {
         this.hideControlBar();
       }
     }, time || 2000);
@@ -1053,6 +1247,10 @@ export class InterfaceController {
     DOMElements.playerContainer.classList.add('controls_visible');
     DOMElements.controlsContainer.classList.remove('fade_out');
     DOMElements.controlsContainer.classList.add('fade_in');
+    if (EnvUtils.isMobile()) {
+      // Mobile: auto-hide after a short idle so the view stays immersive while playing
+      this.queueControlsHide(3000);
+    }
   }
 
   showControlBarTemporarily(timeout = 1000) {
@@ -1084,6 +1282,25 @@ export class InterfaceController {
       DOMElements.currentProgress.style.width = Utils.clamp(this.state.currentTime / duration, 0, 1) * 100 + '%';
     }
     DOMElements.duration.textContent = StringUtils.formatTime(this.state.currentTime) + ' / ' + StringUtils.formatTime(duration);
+
+    // Keep the minimal mobile floating control bar in sync
+    if (EnvUtils.isMobile() && DOMElements.mobileControlBar && DOMElements.mobileControlBar.style.display !== 'none') {
+      DOMElements.mobileTimeElapsed.textContent = StringUtils.formatTime(this.state.currentTime);
+      const remaining = Math.max(duration - this.state.currentTime, 0);
+      DOMElements.mobileTimeRemaining.textContent = '-' + StringUtils.formatTime(remaining);
+      if (!this.mobileSeeking) {
+        DOMElements.mobileSeekCurrent.style.width = Utils.clamp(this.state.currentTime / duration, 0, 1) * 100 + '%';
+      }
+      // Buffered / loaded portion (hard opaque white layer)
+      const video = this.client.currentVideo;
+      if (video && video.buffered && video.buffered.length) {
+        let bufferedEnd = 0;
+        for (let i = 0; i < video.buffered.length; i++) {
+          bufferedEnd = Math.max(bufferedEnd, video.buffered.end(i));
+        }
+        DOMElements.mobileSeekLoaded.style.width = Utils.clamp(bufferedEnd / duration, 0, 1) * 100 + '%';
+      }
+    }
 
     const chapters = this.client.chapters;
     if (chapters.length > 0) {
@@ -1196,15 +1413,23 @@ export class InterfaceController {
       playButton.classList.add('playing');
       playButtonBigCircle.classList.add('playing');
       WebUtils.setLabels(playButton, Localize.getMessage('player_pause_label'));
+      // Mobile: schedule auto-hide once playback starts
+      if (EnvUtils.isMobile()) {
+        this.queueControlsHide(3000);
+      }
     } else {
       playButton.classList.remove('playing');
       playButtonBigCircle.classList.remove('playing');
       WebUtils.setLabels(playButton, Localize.getMessage('player_play_label'));
+      // Mobile: keep controls visible while paused
+      if (EnvUtils.isMobile()) {
+        this.showControlBar();
+      }
     }
   }
 
   isUserSeeking() {
-    return this.progressBar.isSeeking || this.fineTimeControls.isSeeking;
+    return this.progressBar.isSeeking || this.fineTimeControls.isSeeking || this.mobileSeeking;
   }
 
   playPauseAnimation() {

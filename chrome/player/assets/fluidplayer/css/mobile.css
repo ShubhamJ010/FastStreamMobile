@@ -105,3 +105,114 @@
 .fluid_player_mobile .fluid_control_playpause {
     display: none !important;
 }
+
+/* Hide the desktop bottom controls + seek bar; replaced by the floating control bar */
+.fluid_player_mobile .fluid_controls_bottom_container,
+.fluid_player_mobile .fluid_controls_progress_container {
+    display: none !important;
+}
+
+/* Minimal floating mobile control bar:
+   time elapsed (left) · progress + seek (middle) · time remaining (right) */
+.fluid_mobile_control_bar {
+    position: absolute;
+    left: 5%;
+    right: 5%;
+    bottom: 6%;
+    display: flex;
+    align-items: center;
+    gap: 2.5vmin;
+    z-index: 1000; /* Above video and controls */
+    padding: 1.5vmin 3vmin;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 4vmin; /* Squircle */
+    box-sizing: border-box;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+/* Visibility logic: follows the same controls_visible pattern as other mobile layers */
+.mainplayer.controls_visible .fluid_mobile_control_bar {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.fluid_mobile_control_bar .fluid_mobile_time_elapsed,
+.fluid_mobile_control_bar .fluid_mobile_time_remaining {
+    color: white;
+    font-size: 3.2vmin;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.fluid_mobile_seek {
+    position: relative;
+    flex: 1;
+    height: 1.2vmin;
+    min-height: 8px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 1vmin;
+    cursor: pointer;
+    touch-action: none;
+}
+
+/* Buffered / loaded portion: solid white (YouTube-style). Sits underneath the
+   played bar and marks how far the video has buffered. */
+.fluid_mobile_seek_loaded {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 0%;
+    background: #ffffff;
+    border-radius: 1vmin;
+    z-index: 1;
+}
+
+/* Played portion: solid red (YouTube-style). Drawn on top of the white buffered
+   layer so the red "played" position is clearly distinct from the buffered zone. */
+.fluid_mobile_seek_current {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 0%;
+    background: #ff0000;
+    border-radius: 1vmin;
+    z-index: 2;
+    /* Enlarge the hit/touch area without changing the visual height */
+    box-shadow: 0 0 0 1.5vmin transparent;
+}
+
+/* Mobile hold-to-2x feedback banner.
+   Sits in the top-center, just above the centered play/pause button, and
+   fades in while the user is holding the video background to play at 2x. */
+.fluid_mobile_2x_banner {
+    position: absolute;
+    top: 30%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1002; /* Above the center play button (1001) */
+    padding: 1.2vmin 5vmin;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 4vmin;
+    color: #ffffff;
+    font-size: 7vmin;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    line-height: 1;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+}
+
+.fluid_mobile_2x_banner.show {
+    opacity: 1;
+}

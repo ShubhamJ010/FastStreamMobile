@@ -89,4 +89,12 @@ export const DOMElements = {
   skipForwardButton: document.querySelector('.mainplayer .fluid_control_skip_forward'),
   skipBackwardButton: document.querySelector('.mainplayer .fluid_control_skip_backward'),
   mobileTopTools: document.querySelector('.mainplayer .fluid_mobile_top_tools'),
+
+  mobileControlBar: document.querySelector('.mainplayer .fluid_mobile_control_bar'),
+  mobileTimeElapsed: document.querySelector('.mainplayer .fluid_mobile_time_elapsed'),
+  mobileSeek: document.querySelector('.mainplayer .fluid_mobile_seek'),
+  mobileSeekLoaded: document.querySelector('.mainplayer .fluid_mobile_seek_loaded'),
+  mobileSeekCurrent: document.querySelector('.mainplayer .fluid_mobile_seek_current'),
+  mobileTimeRemaining: document.querySelector('.mainplayer .fluid_mobile_time_remaining'),
+  mobile2xBanner: document.querySelector('.mainplayer .fluid_mobile_2x_banner'),
 };
