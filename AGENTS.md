@@ -34,9 +34,13 @@
 - **Research Phase:** Always check if a file is an "upstream" file before editing. Upstream files are those present in the original repository.
 - **Implementation:** Favor "Extension" over "Modification". If you need to change a UI element, consider if it can be done via CSS overrides or a wrapper component instead of editing the core HTML/JS.
 - **Validation:** When adding UI changes, simulate mobile viewports during testing if possible.
-- **Clean Build & Update Procedure for Firefox:**
-    If you need to rebuild and update the Firefox XPI in `Downloads`:
+- **Version Tracking Policy:** Always keep `version` in `package.json`, `package-lock.json`, and `chrome/manifest.json` aligned with upstream (e.g. `1.3.78`). Do **not** reset the version to `0.0.1`, as `UpdateChecker` compares against upstream's `package.json` on GitHub and will trigger an intrusive "An Update is Available!" banner if the local version is behind.
+- **Build & Hot Reload Deployment for Firefox:**
+    For local development and testing, do not copy an `.xpi` to `~/Downloads`. Instead, build and unpack directly to the local hot-reload directory:
     ```bash
-    rm -rf built/ && npm run build && rm -f /Users/sj/Downloads/faststream-mobile.xpi && cp built/firefox-libre-faststream_video_player-1.3.78.zip /Users/sj/Downloads/faststream-mobile.xpi
+    npm run build && unzip -o built/firefox-libre-faststream_video_player-*.zip -d /private/tmp/fs-ext/
     ```
+    Then in Firefox:
+    1. Navigate to `about:debugging#/runtime/this-firefox`.
+    2. Click **Reload** on `faststream@andrews` (or click **Load Temporary Add-on...** and select `/private/tmp/fs-ext/manifest.json` if not already loaded).
 
